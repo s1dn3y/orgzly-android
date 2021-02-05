@@ -1,6 +1,10 @@
 package com.orgzly.android.espresso;
 
+import android.content.pm.ActivityInfo;
 import android.widget.DatePicker;
+
+import androidx.test.core.app.ActivityScenario;
+import androidx.test.espresso.contrib.RecyclerViewActions;
 
 import com.orgzly.R;
 import com.orgzly.android.OrgzlyTest;
@@ -9,18 +13,13 @@ import com.orgzly.android.ui.main.MainActivity;
 
 import org.junit.Before;
 import org.junit.Ignore;
-import org.junit.Rule;
 import org.junit.Test;
-
-import androidx.test.espresso.contrib.RecyclerViewActions;
-import androidx.test.rule.ActivityTestRule;
 
 import static androidx.test.espresso.Espresso.onView;
 import static androidx.test.espresso.Espresso.pressBack;
 import static androidx.test.espresso.action.ViewActions.click;
 import static androidx.test.espresso.action.ViewActions.longClick;
 import static androidx.test.espresso.action.ViewActions.scrollTo;
-import static androidx.test.espresso.action.ViewActions.swipeLeft;
 import static androidx.test.espresso.action.ViewActions.swipeUp;
 import static androidx.test.espresso.assertion.ViewAssertions.doesNotExist;
 import static androidx.test.espresso.assertion.ViewAssertions.matches;
@@ -37,8 +36,6 @@ import static com.orgzly.android.espresso.EspressoUtils.onNoteInBook;
 import static com.orgzly.android.espresso.EspressoUtils.onNotesInBook;
 import static com.orgzly.android.espresso.EspressoUtils.openContextualToolbarOverflowMenu;
 import static com.orgzly.android.espresso.EspressoUtils.replaceTextCloseKeyboard;
-import static com.orgzly.android.espresso.EspressoUtils.toLandscape;
-import static com.orgzly.android.espresso.EspressoUtils.toPortrait;
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.anyOf;
 import static org.hamcrest.Matchers.endsWith;
@@ -46,10 +43,8 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.startsWith;
 
-//@Ignore
 public class BookTest extends OrgzlyTest {
-    @Rule
-    public ActivityTestRule activityRule = new EspressoActivityTestRule<>(MainActivity.class, true, false);
+    private ActivityScenario<MainActivity> scenario;
 
     @Before
     public void setUp() throws Exception {
@@ -106,7 +101,7 @@ public class BookTest extends OrgzlyTest {
                 "** Note #40.\n" +
                 "");
 
-        activityRule.launchActivity(null);
+        scenario = ActivityScenario.launch(MainActivity.class);
 
         onView(allOf(withText("book-name"), isDisplayed())).perform(click());
     }
@@ -127,13 +122,6 @@ public class BookTest extends OrgzlyTest {
         onView(withId(R.id.fragment_note_view_flipper)).check(matches(isDisplayed()));
     }
 
-    @Ignore
-    @Test
-    public void testOpensNoteFromBookBySwiping() {
-        onNoteInBook(2).perform(swipeLeft());
-        onView(withId(R.id.fragment_note_view_flipper)).check(matches(isDisplayed()));
-    }
-
     @Test
     public void testScheduledNoteTimeStaysTheSameAfterSetting() {
         onNoteInBook(9, R.id.item_head_scheduled_text).check(matches(allOf(withText(userDateTime("<2014-05-26 Mon>")), isDisplayed())));
@@ -147,8 +135,8 @@ public class BookTest extends OrgzlyTest {
 
     @Test
     public void testRemovingScheduledTimeFromMultipleNotes() {
-        onNoteInBook(8, R.id.item_head_scheduled).check(matches(not(isDisplayed())));
-        onNoteInBook(9, R.id.item_head_scheduled).check(matches(isDisplayed()));
+        onNoteInBook(8, R.id.item_head_scheduled_text).check(matches(not(isDisplayed())));
+        onNoteInBook(9, R.id.item_head_scheduled_text).check(matches(isDisplayed()));
 
         onNoteInBook(8).perform(longClick());
         onNoteInBook(9).perform(click());
@@ -156,8 +144,8 @@ public class BookTest extends OrgzlyTest {
         onView(withId(R.id.bottom_action_bar_schedule)).perform(click());
         onView(withText(R.string.clear)).perform(click());
 
-        onNoteInBook(8, R.id.item_head_scheduled).check(matches(not(isDisplayed())));
-        onNoteInBook(9, R.id.item_head_scheduled).check(matches(not(isDisplayed())));
+        onNoteInBook(8, R.id.item_head_scheduled_text).check(matches(not(isDisplayed())));
+        onNoteInBook(9, R.id.item_head_scheduled_text).check(matches(not(isDisplayed())));
     }
 
     @Test
@@ -188,9 +176,14 @@ public class BookTest extends OrgzlyTest {
 
     @Test
     public void testScrollPositionKeptOnRotation() {
-        toLandscape(activityRule);
+        scenario.onActivity(activity ->
+                activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE));
+
         onNoteInBook(40).check(matches(isDisplayed())); // Scroll to note
-        toPortrait(activityRule);
+
+        scenario.onActivity(activity ->
+                activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT));
+
         onView(withText("Note #40.")).check(matches(isDisplayed()));
     }
 
@@ -273,7 +266,8 @@ public class BookTest extends OrgzlyTest {
 
     @Test
     public void testActionModeMovingStaysOpenAfterRotation() {
-        toPortrait(activityRule);
+        scenario.onActivity(activity ->
+                activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT));
 
         onView(withId(R.id.notes_action_move_down)).check(doesNotExist());
 
@@ -283,7 +277,8 @@ public class BookTest extends OrgzlyTest {
         onView(withText(R.string.move)).perform(click());
         onView(withId(R.id.notes_action_move_down)).check(matches(isDisplayed()));
 
-        toLandscape(activityRule);
+        scenario.onActivity(activity ->
+                activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE));
 
         onView(withId(R.id.notes_action_move_down)).check(matches(isDisplayed()));
     }
@@ -418,11 +413,13 @@ public class BookTest extends OrgzlyTest {
         onView(withId(R.id.fragment_note_view_flipper)).check(matches(isDisplayed()));
         onView(withText(R.string.note_does_not_exist_anymore)).check(matches(isDisplayed()));
         onView(withId(R.id.done)).check(doesNotExist());
-        onView(withId(R.id.close)).check(doesNotExist());
+        onView(withId(R.id.note_view_edit_switch)).check(doesNotExist());
 
         // Rotate
-        toLandscape(activityRule);
-        toPortrait(activityRule);
+        scenario.onActivity(activity -> {
+            activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+            activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        });
 
         // Leave the note
         pressBack();
@@ -432,7 +429,7 @@ public class BookTest extends OrgzlyTest {
     public void testSetDeadlineTimeForNewNote() {
         onView(withId(R.id.fab)).perform(click());
         onView(withId(R.id.fragment_note_deadline_button)).perform(closeSoftKeyboardWithDelay(), scrollTo(), click());
-        onView(withId(R.id.dialog_timestamp_date_picker)).perform(click());
+        onView(withId(R.id.date_picker_button)).perform(click());
         onView(withClassName(equalTo(DatePicker.class.getName()))).perform(setDate(2014, 4, 1));
         onView(anyOf(withText(R.string.ok), withText(R.string.done))).perform(click());
         onView(withText(R.string.set)).perform(click());
@@ -479,7 +476,7 @@ public class BookTest extends OrgzlyTest {
         onNoteInBook(5, R.id.item_head_title).check(matches(withText(startsWith("DONE"))));
     }
 
-    @Ignore // TODO: Implement
+    @Ignore("Not implemented yet")
     @Test
     public void testPreselectedStateOfSelectedNote() {
         onNoteInBook(3).perform(longClick());

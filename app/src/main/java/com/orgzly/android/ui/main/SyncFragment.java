@@ -2,7 +2,10 @@ package com.orgzly.android.ui.main;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.BroadcastReceiver;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -12,10 +15,16 @@ import android.text.format.DateUtils;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
 import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
 import android.widget.ProgressBar;
 import android.widget.TextView;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.fragment.app.Fragment;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import com.orgzly.BuildConfig;
 import com.orgzly.R;
@@ -30,9 +39,7 @@ import com.orgzly.android.usecase.UseCaseResult;
 import com.orgzly.android.usecase.UseCaseRunner;
 import com.orgzly.android.util.AppPermissions;
 import com.orgzly.android.util.LogUtils;
-
-import androidx.fragment.app.Fragment;
-import androidx.localbroadcastmanager.content.LocalBroadcastManager;
+import com.orgzly.databinding.FragmentSyncBinding;
 
 
 /**
@@ -43,6 +50,8 @@ public class SyncFragment extends Fragment {
 
     /** Name used for {@link android.app.FragmentManager}. */
     public static final String FRAGMENT_TAG = SyncFragment.class.getName();
+
+    private FragmentSyncBinding binding;
 
     /** Activity which has this fragment attached. Used as a target for hooks. */
     private Listener mListener;
@@ -117,7 +126,7 @@ public class SyncFragment extends Fragment {
         try {
             mListener = (Listener) getActivity();
         } catch (ClassCastException e) {
-            throw new ClassCastException(getActivity().toString() + " must implement " + Listener.class);
+            throw new ClassCastException(requireActivity().toString() + " must implement " + Listener.class);
         }
 
         resources = context.getResources();
@@ -129,8 +138,9 @@ public class SyncFragment extends Fragment {
      */
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, savedInstanceState);
         super.onCreate(savedInstanceState);
+
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, savedInstanceState);
 
         // Retain this fragment across configuration changes.
         setRetainInstance(true);
@@ -141,14 +151,19 @@ public class SyncFragment extends Fragment {
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, inflater, container, savedInstanceState);
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, savedInstanceState);
 
-        View view = inflater.inflate(R.layout.fragment_sync, container, false);
+        binding = FragmentSyncBinding.inflate(inflater, container, false);
 
-        /* Retained on configuration change. */
+        return binding.getRoot();
+    }
+
+    @Override
+    public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
+        super.onViewCreated(view, savedInstanceState);
+
+        // Retained on configuration change
         mSyncButton = new SyncButton(view, mSyncButton);
-
-        return view;
     }
 
     @Override
@@ -162,8 +177,9 @@ public class SyncFragment extends Fragment {
 
     @Override
     public void onDestroy() {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG);
         super.onDestroy();
+
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG);
 
         LocalBroadcastManager.getInstance(getContext()).unregisterReceiver(syncServiceReceiver);
     }
@@ -173,8 +189,10 @@ public class SyncFragment extends Fragment {
      */
     @Override
     public void onDetach() {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG);
         super.onDetach();
+
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG);
+
         mListener = null;
     }
 
@@ -193,7 +211,7 @@ public class SyncFragment extends Fragment {
         private final Animation rotation;
 
         public SyncButton(View view, SyncButton prev) {
-            this.appContext = getActivity().getApplicationContext();
+            this.appContext = requireActivity().getApplicationContext();
 
             rotation = AnimationUtils.loadAnimation(appContext, R.anim.rotate_counterclockwise);
             rotation.setRepeatCount(Animation.INFINITE);
@@ -222,16 +240,17 @@ public class SyncFragment extends Fragment {
             buttonContainer.setOnClickListener(v ->
                     SyncService.start(getContext(), new Intent(getContext(), SyncService.class)));
 
-            buttonContainer.setOnLongClickListener(new View.OnLongClickListener() {
-                @Override
-                public boolean onLongClick(View v) {
-                    new AlertDialog.Builder(getContext())
-                            .setPositiveButton(R.string.ok, null)
-                            .setMessage(buttonText.getText())
-                            .show();
+            buttonContainer.setOnLongClickListener(v -> {
+                Dialog dialog = new AlertDialog.Builder(getContext())
+                        .setPositiveButton(R.string.ok, null)
+                        .setNeutralButton(R.string.copy, (d, w) ->
+                                copyToClipboard("Sync output", buttonText.getText()))
+                        .setMessage(buttonText.getText())
+                        .show();
 
-                    return true;
-                }
+                setDialogMessageSelectable(dialog);
+
+                return true;
             });
         }
 
@@ -342,6 +361,29 @@ public class SyncFragment extends Fragment {
                     appContext,
                     time,
                     DateUtils.FORMAT_SHOW_DATE | DateUtils.FORMAT_ABBREV_MONTH | DateUtils.FORMAT_SHOW_TIME);
+        }
+    }
+
+    private void setDialogMessageSelectable(Dialog dialog) {
+        Window window = dialog.getWindow();
+        if (window != null) {
+            TextView textView = window.getDecorView().findViewById(android.R.id.message);
+            if (textView != null) {
+                textView.setTextIsSelectable(true);
+            }
+        }
+    }
+
+    private void copyToClipboard(CharSequence label, CharSequence text) {
+        Context context = getActivity();
+
+        if (context != null) {
+            ClipboardManager clipboard = (ClipboardManager)
+                    context.getSystemService(Context.CLIPBOARD_SERVICE);
+
+            ClipData clip = ClipData.newPlainText(label, text);
+
+            clipboard.setPrimaryClip(clip);
         }
     }
 

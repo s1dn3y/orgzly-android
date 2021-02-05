@@ -5,16 +5,23 @@
     tools:ignore="AlwaysShowAction">
 
     <item
-        android:id="@+id/close"
-        android:icon="?attr/ic_close_24dp"
+        android:id="@+id/note_view_edit"
+        android:title=""
         app:showAsAction="always"
-        android:title="@string/close" />
+        app:actionLayout="@layout/note_view_edit_switch">
+    </item>
 
     <item
         android:id="@+id/done"
         android:icon="?attr/ic_done_24dp"
         app:showAsAction="always"
         android:title="@string/done" />
+
+    <item
+        android:id="@+id/keep_screen_on"
+        app:showAsAction="never"
+        android:checkable="true"
+        android:title="@string/keep_screen_on"/>
 
     <item
         android:id="@+id/metadata"

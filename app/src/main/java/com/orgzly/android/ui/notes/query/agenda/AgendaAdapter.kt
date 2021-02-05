@@ -4,7 +4,6 @@ import android.content.Context
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.TextView
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
@@ -16,14 +15,17 @@ import com.orgzly.android.ui.Selection
 import com.orgzly.android.ui.notes.NoteItemViewBinder
 import com.orgzly.android.ui.notes.NoteItemViewHolder
 import com.orgzly.android.ui.notes.quickbar.QuickBars
+import com.orgzly.android.ui.stickyheaders.StickyHeaders
 import com.orgzly.android.util.LogUtils
 import com.orgzly.android.util.UserTimeFormatter
+import com.orgzly.databinding.ItemAgendaDividerBinding
+import com.orgzly.databinding.ItemHeadBinding
 
 class AgendaAdapter(
         private val context: Context,
         private val clickListener: OnViewHolderClickListener<AgendaItem>,
         private val quickBar: QuickBars
- ) : ListAdapter<AgendaItem, RecyclerView.ViewHolder>(DIFF_CALLBACK), SelectableItemAdapter {
+) : ListAdapter<AgendaItem, RecyclerView.ViewHolder>(DIFF_CALLBACK), SelectableItemAdapter, StickyHeaders {
 
     private val adapterSelection: Selection = Selection()
 
@@ -44,66 +46,70 @@ class AgendaAdapter(
         if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG)
 
         return when (viewType) {
-            DIVIDER_ITEM_TYPE -> {
-                val layout = LayoutInflater.from(context)
-                        .inflate(R.layout.item_agenda_divider, parent, false)
-                DividerViewHolder(layout)
+            OVERDUE_ITEM_TYPE, DAY_ITEM_TYPE -> {
+                val binding = ItemAgendaDividerBinding.inflate(
+                        LayoutInflater.from(context), parent, false)
+
+                NoteItemViewBinder.setupSpacingForDensitySetting(context, binding)
+
+                DividerViewHolder(binding)
             }
 
             else -> {
-                val layout = LayoutInflater.from(context)
-                        .inflate(R.layout.item_head, parent, false)
+                val binding = ItemHeadBinding.inflate(LayoutInflater.from(context), parent, false)
 
-                NoteItemViewHolder(layout, viewHolderListener)
+                NoteItemViewBinder.setupSpacingForDensitySetting(context, binding)
+
+                NoteItemViewHolder(binding, viewHolderListener)
             }
         }
     }
 
     override fun onBindViewHolder(h: RecyclerView.ViewHolder, position: Int) {
-        if (h.itemViewType == DIVIDER_ITEM_TYPE) {
-            val holder = h as DividerViewHolder
-            val item = getItem(position) as AgendaItem.Divider
+        when (h.itemViewType) {
+            OVERDUE_ITEM_TYPE -> {
+                val holder = h as DividerViewHolder
+                val item = getItem(position) as AgendaItem.Overdue
 
-            bindDividerView(holder, item)
+                bindDividerView(holder, item)
+            }
 
-        } else {
-            val holder = h as NoteItemViewHolder
-            val item = getItem(position) as AgendaItem.Note
+            DAY_ITEM_TYPE -> {
+                val holder = h as DividerViewHolder
+                val item = getItem(position) as AgendaItem.Day
 
-            noteViewBinder.bind(holder, item.note)
+                bindDividerView(holder, item)
+            }
 
-            quickBar.bind(holder)
+            else -> {
+                val holder = h as NoteItemViewHolder
+                val item = getItem(position) as AgendaItem.Note
 
-            getSelection().setIsSelectedBackground(holder.itemView, item.id)
+                noteViewBinder.bind(holder, item.note, item.timeType)
+
+                quickBar.bind(holder)
+
+                getSelection().setIsSelectedBackground(holder.itemView, item.id)
+            }
         }
     }
 
-    private fun bindDividerView(holder: DividerViewHolder, item: AgendaItem.Divider) {
-        val margins = NoteItemViewBinder.getMarginsForListDensity(context)
-
-        holder.time.text = userTimeFormatter.formatDate(item.day)
-
-        holder.view.setPadding(
-                holder.view.paddingLeft, margins.first, holder.view.paddingRight, margins.first)
+    private fun bindDividerView(holder: DividerViewHolder, item: AgendaItem.Overdue) {
+        holder.binding.itemAgendaDividerText.text = context.getString(R.string.overdue)
     }
 
-    inner class DividerViewHolder(val view: View) : RecyclerView.ViewHolder(view) {
-        val time: TextView = view.findViewById(R.id.item_agenda_time_text)
+    private fun bindDividerView(holder: DividerViewHolder, item: AgendaItem.Day) {
+        holder.binding.itemAgendaDividerText.text = userTimeFormatter.formatDate(item.day)
     }
 
-//    inner class NoteViewHolder(view: View) : NotesAdapter.NoteViewHolder() {
-//        val title: TextView = view.findViewById(R.id.item_head_title)
-//        val scheduledTimeText: TextView = view.findViewById(R.id.item_head_scheduled_text)
-//    }
-
+    inner class DividerViewHolder(val binding: ItemAgendaDividerBinding) :
+            RecyclerView.ViewHolder(binding.root)
 
     override fun getItemViewType(position: Int): Int {
-        val item = getItem(position)
-
-        return if (item is AgendaItem.Note) {
-            NOTE_ITEM_TYPE
-        } else {
-            DIVIDER_ITEM_TYPE
+        return when (getItem(position)) {
+            is AgendaItem.Overdue -> OVERDUE_ITEM_TYPE
+            is AgendaItem.Day -> DAY_ITEM_TYPE
+            else -> NOTE_ITEM_TYPE
         }
     }
 
@@ -115,11 +121,23 @@ class AgendaAdapter(
         return adapterSelection
     }
 
+    override fun isStickyHeader(position: Int): Boolean {
+        return if (position < itemCount) {
+            return when (getItemViewType(position)) {
+                OVERDUE_ITEM_TYPE, DAY_ITEM_TYPE -> true
+                else -> false
+            }
+        } else {
+            false
+        }
+    }
+
     companion object {
         private val TAG = AgendaAdapter::class.java.name
 
-        const val DIVIDER_ITEM_TYPE = 0
-        const val NOTE_ITEM_TYPE = 1
+        const val OVERDUE_ITEM_TYPE = 0
+        const val DAY_ITEM_TYPE = 1
+        const val NOTE_ITEM_TYPE = 2
 
         private val DIFF_CALLBACK: DiffUtil.ItemCallback<AgendaItem> =
                 object : DiffUtil.ItemCallback<AgendaItem>() {
@@ -128,14 +146,19 @@ class AgendaAdapter(
                     }
 
                     override fun areContentsTheSame(oldItem: AgendaItem, newItem: AgendaItem): Boolean {
-                        if (oldItem is AgendaItem.Note && newItem is AgendaItem.Note) {
-                            return oldItem == newItem // TODO: Compare content
+                        return if (oldItem is AgendaItem.Note && newItem is AgendaItem.Note) {
+                            // Specifying type to remove the error when comparing below:
+                            // Suspicious equality check: equals() is not implemented in AgendaItem
+                            val old: AgendaItem.Note = oldItem
+                            val new: AgendaItem.Note = newItem
 
-                        } else if (oldItem is AgendaItem.Divider && newItem is AgendaItem.Divider) {
-                            return oldItem.day == newItem.day
+                            old == new
+
+                        } else if (oldItem is AgendaItem.Day && newItem is AgendaItem.Day) {
+                            oldItem.day == newItem.day
 
                         } else {
-                            return false
+                            false
                         }
                     }
                 }

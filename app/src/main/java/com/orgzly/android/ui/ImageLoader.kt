@@ -24,6 +24,8 @@ import com.bumptech.glide.request.target.SimpleTarget
 import com.bumptech.glide.request.transition.Transition
 import com.bumptech.glide.request.RequestOptions
 import com.orgzly.R
+import com.orgzly.android.usecase.LinkFindTarget
+import com.orgzly.android.usecase.UseCaseRunner
 import com.orgzly.android.util.LogUtils
 
 
@@ -52,17 +54,22 @@ object ImageLoader {
             // Get the current context
             val context = App.getAppContext()
 
-            // Get the file
-            val file = File(Environment.getExternalStorageDirectory(), path)
+            val file = UseCaseRunner.run(LinkFindTarget(path)).userData
+
+            if (file !is File) {
+                if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, "Did not find a File target for $path, actually found $file")
+                return
+            }
 
             if (file.exists()) {
                 // Get the Uri
-                val contentUri = FileProvider.getUriForFile(context, BuildConfig.APPLICATION_ID + ".fileprovider", file)
+                val contentUri = FileProvider.getUriForFile(
+                        context, BuildConfig.APPLICATION_ID + ".fileprovider", file)
 
                 // Get image sizes to reduce their memory footprint by rescaling
                 val options = BitmapFactory.Options()
                 options.inJustDecodeBounds = true
-                BitmapFactory.decodeFile(Environment.getExternalStorageDirectory().toString() + "/" + path, options)
+                BitmapFactory.decodeFile(file.absolutePath, options)
 
                 val size = calculateImageDisplaySize(
                         file.name, "pre-load", textWithMarkup, options.outWidth, options.outHeight)
@@ -111,6 +118,8 @@ object ImageLoader {
                                 text.setSpan(ImageSpan(bitmapDrawable), start, end, flags)
                             }
                         })
+            } else {
+                if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, "File $file (from $path) does not exist")
             }
         }
     }

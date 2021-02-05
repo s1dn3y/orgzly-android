@@ -2,18 +2,20 @@ package com.orgzly.android.ui.savedsearches
 
 import android.app.AlertDialog
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.view.*
-import android.widget.ViewFlipper
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.view.ActionMode
+import androidx.fragment.app.Fragment
 import androidx.lifecycle.Observer
 import androidx.lifecycle.ViewModelProviders
 import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import com.orgzly.BuildConfig
 import com.orgzly.R
+import com.orgzly.android.App
 import com.orgzly.android.data.DataRepository
 import com.orgzly.android.db.entity.SavedSearch
 import com.orgzly.android.savedsearch.FileSavedSearchStore
@@ -23,17 +25,17 @@ import com.orgzly.android.ui.OnViewHolderClickListener
 import com.orgzly.android.ui.drawer.DrawerItem
 import com.orgzly.android.ui.main.SharedMainActivityViewModel
 import com.orgzly.android.util.LogUtils
-import dagger.android.support.DaggerFragment
+import com.orgzly.databinding.FragmentSavedSearchesBinding
 import java.io.IOException
 import javax.inject.Inject
 
 /**
  * Displays and allows modifying saved searches.
  */
-class SavedSearchesFragment : DaggerFragment(), Fab, DrawerItem, OnViewHolderClickListener<SavedSearch> {
-    private var listener: Listener? = null
+class SavedSearchesFragment : Fragment(), Fab, DrawerItem, OnViewHolderClickListener<SavedSearch> {
+    private lateinit var binding: FragmentSavedSearchesBinding
 
-    private lateinit var viewFlipper: ViewFlipper
+    private var listener: Listener? = null
 
     private var actionMode: ActionMode? = null
     private val actionModeCallback = ActionModeCallback()
@@ -54,6 +56,8 @@ class SavedSearchesFragment : DaggerFragment(), Fab, DrawerItem, OnViewHolderCli
     override fun onAttach(context: Context) {
         super.onAttach(context)
 
+        App.appComponent.inject(this)
+
         listener = activity as Listener
     }
 
@@ -63,17 +67,20 @@ class SavedSearchesFragment : DaggerFragment(), Fab, DrawerItem, OnViewHolderCli
         val factory = SavedSearchesViewModelFactory.getInstance(dataRepository)
         viewModel = ViewModelProviders.of(this, factory).get(SavedSearchesViewModel::class.java)
 
-        sharedMainActivityViewModel = activity?.let {
-            ViewModelProviders.of(it).get(SharedMainActivityViewModel::class.java)
-        } ?: throw IllegalStateException("No Activity")
+        sharedMainActivityViewModel = ViewModelProviders.of(requireActivity())
+                .get(SharedMainActivityViewModel::class.java)
 
         setHasOptionsMenu(true)
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
-        val view = inflater.inflate(R.layout.fragment_saved_searches, container, false)
+        binding = FragmentSavedSearchesBinding.inflate(inflater, container, false)
 
-        viewFlipper = view.findViewById(R.id.fragment_saved_searches_flipper) as ViewFlipper
+        return binding.root
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
 
         viewAdapter = SavedSearchesAdapter(this)
         viewAdapter.setHasStableIds(true)
@@ -82,13 +89,11 @@ class SavedSearchesFragment : DaggerFragment(), Fab, DrawerItem, OnViewHolderCli
 
         val dividerItemDecoration = DividerItemDecoration(context, layoutManager.orientation)
 
-        view.findViewById<RecyclerView>(R.id.fragment_saved_searches_recycler_view).let {
+        binding.fragmentSavedSearchesRecyclerView.let {
             it.layoutManager = layoutManager
             it.adapter = viewAdapter
             it.addItemDecoration(dividerItemDecoration)
         }
-
-        return view
     }
 
     override fun onPause() {
@@ -126,6 +131,13 @@ class SavedSearchesFragment : DaggerFragment(), Fab, DrawerItem, OnViewHolderCli
                 listener?.let {
                     importExport(R.string.export_to, it::onSavedSearchesExportRequest)
                 }
+                true
+            }
+
+            R.id.saved_searches_help -> {
+                val uri = Uri.parse("http://www.orgzly.com/help#search")
+                val intent = Intent(Intent.ACTION_VIEW, uri)
+                startActivity(intent)
                 true
             }
 
@@ -182,7 +194,7 @@ class SavedSearchesFragment : DaggerFragment(), Fab, DrawerItem, OnViewHolderCli
         viewModel.viewState.observe(viewLifecycleOwner, Observer {
             if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, "Observed view state: $it")
 
-            viewFlipper.displayedChild = when (it) {
+            binding.fragmentSavedSearchesFlipper.displayedChild = when (it) {
                 SavedSearchesViewModel.ViewState.LOADING -> 0
                 SavedSearchesViewModel.ViewState.LOADED -> 1
                 SavedSearchesViewModel.ViewState.EMPTY -> 2
@@ -205,8 +217,9 @@ class SavedSearchesFragment : DaggerFragment(), Fab, DrawerItem, OnViewHolderCli
     }
 
     override fun onResume() {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG)
         super.onResume()
+
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG)
 
         announceChangesToActivity()
     }

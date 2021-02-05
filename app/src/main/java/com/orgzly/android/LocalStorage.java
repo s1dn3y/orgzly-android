@@ -1,7 +1,9 @@
 package com.orgzly.android;
 
 import android.content.Context;
+import android.os.Build;
 import android.os.Environment;
+import android.provider.MediaStore;
 import android.util.Log;
 
 import com.orgzly.BuildConfig;
@@ -37,29 +39,23 @@ public class LocalStorage {
      * Get temporary {@code File} for storing book's content.
      */
     public File getTempBookFile() throws IOException {
-        File baseDir;
-        if (isExternalStorageWritable()) {
-            baseDir = externalCacheDir("tmp");
-        } else {
-            baseDir = internalCacheDir("tmp");
-        }
+        File dir = getCacheDirectory("notebooks");
 
         try {
-            return File.createTempFile("notebook.", ".tmp", baseDir);
+            return File.createTempFile("notebook.", ".tmp", dir);
         } catch (IOException e) {
-            throw new IOException("Failed creating temporary file in " + baseDir + ": " + e.getMessage());
+            throw new IOException("Failed creating temporary file in " + dir + ": " + e.getMessage());
         }
     }
 
-    public File getLocalRepoDirectory(String dir) throws IOException {
-        File baseDir;
-        if (isExternalStorageWritable()) {
-            baseDir = externalCacheDir(dir);
-        } else {
-            baseDir = internalCacheDir(dir);
+    public File getCacheDirectory(String child) throws IOException {
+        File dir = internalCacheDir(child);
+
+        if (dir == null) {
+            throw new IOException("Failed to get cache directory " + child);
         }
 
-        return baseDir;
+        return dir;
     }
 
     /**
@@ -82,24 +78,46 @@ public class LocalStorage {
         return file;
     }
 
-    private File externalCacheDir(String dir) throws IOException {
-        File file = new File(mContext.getExternalCacheDir(), dir);
-
-        if (! file.isDirectory()) {
-            if (! file.mkdirs()) {
-                throw new IOException("Failed creating directory " + file);
-            }
-        }
-
-        return file;
+    /**
+     * File in Download/ directory.
+     */
+    public File downloadsDirectory(String fileName) throws IOException {
+        return new File(downloadsDirectory(), fileName);
     }
 
-    private File internalCacheDir(String dir) throws IOException {
+    private File externalCacheDir(String child) {
+        if (!isExternalStorageWritable()) {
+            return null;
+        }
+
+        File baseDir = mContext.getExternalCacheDir();
+
+        if (baseDir == null) {
+            return null;
+        }
+
+        if (child != null) {
+            File dir = new File(baseDir, child);
+
+            if (!dir.isDirectory()) {
+                if (!dir.mkdirs()) {
+                    return null;
+                }
+            }
+
+            return dir;
+
+        } else {
+            return baseDir;
+        }
+    }
+
+    private File internalCacheDir(String dir) {
         File file = new File(mContext.getCacheDir(), dir);
 
         if (! file.isDirectory()) {
             if (! file.mkdirs()) {
-                throw new IOException("Failed creating directory " + file);
+                return null;
             }
         }
 
@@ -121,8 +139,9 @@ public class LocalStorage {
     public void cleanup() {
         deleteRecursive(mContext.getCacheDir());
 
-        if (isExternalStorageWritable()) {
-            deleteRecursive(mContext.getExternalCacheDir());
+        File dir = externalCacheDir(null);
+        if (dir != null) {
+            deleteRecursive(dir);
         }
     }
 

@@ -38,7 +38,7 @@ import java.util.*
             VersionedRook::class
         ],
 
-        version = 152
+        version = 155
 )
 @TypeConverters(com.orgzly.android.db.TypeConverters::class)
 abstract class OrgzlyDatabase : RoomDatabase() {
@@ -68,6 +68,9 @@ abstract class OrgzlyDatabase : RoomDatabase() {
         const val NAME = "orgzly.db"
 
         const val NAME_FOR_TESTS = "test_orgzly.db"
+
+        /// Defined in sqlite3.c: The maximum value of a ?nnn wildcard that the parser will accept
+        const val SQLITE_MAX_VARIABLE_NUMBER = 999
 
         @JvmStatic
         fun forMemory(context: Context): OrgzlyDatabase {
@@ -104,13 +107,16 @@ abstract class OrgzlyDatabase : RoomDatabase() {
 
                             MIGRATION_149_150, // Switch to Room
                             MIGRATION_150_151,
-                            MIGRATION_151_152
+                            MIGRATION_151_152,
+                            MIGRATION_152_153,
+                            MIGRATION_153_154,
+                            MIGRATION_154_155
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
                             if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, "Database created")
 
-                            OrgzlyDatabase.insertDefaultSearches(db)
+                            insertDefaultSearches(db)
                         }
 
                         override fun onOpen(db: SupportSQLiteDatabase) {
@@ -457,6 +463,94 @@ abstract class OrgzlyDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("DROP INDEX index_note_properties_note_id_name")
                 db.execSQL("CREATE  INDEX `index_note_properties_note_id` ON `note_properties` (`note_id`)")
+            }
+        }
+
+        private val MIGRATION_152_153 = object : Migration(152, 153) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE repos ADD COLUMN type INTEGER NOT NULL DEFAULT 0")
+
+                val types = mutableMapOf<Long, Int>()
+
+                val query = SupportSQLiteQueryBuilder
+                        .builder("repos")
+                        .columns(arrayOf("id", "url"))
+                        .create()
+
+                db.query(query).use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        while (!cursor.isAfterLast) {
+                            val id = cursor.getLong(0)
+                            val url = cursor.getString(1)
+
+                            types[id] = when {
+                                url.startsWith("mock") -> 1
+                                url.startsWith("dropbox") -> 2
+                                url.startsWith("file") -> 3
+                                url.startsWith("content") -> 4
+                                url.matches("^(webdav|dav|http)s?.*".toRegex()) -> 5
+                                else -> throw IllegalArgumentException("Unknown repo $url")
+                            }
+
+                            cursor.moveToNext()
+                        }
+                    }
+                }
+
+                types.keys.forEach { id ->
+                    val values = ContentValues().apply {
+                        put("type", types[id])
+                    }
+                    db.update("repos", SQLiteDatabase.CONFLICT_ROLLBACK, values, "id = $id", null)
+                }
+            }
+        }
+
+        private val MIGRATION_153_154 = object : Migration(153, 154) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                /*
+                 * Delete book-related entries with missing repos data.
+                 * Deleting or renaming repositories before v1.7 was deleting entries from repos
+                 * without deleting dependent entries from other tables. This started causing
+                 * crashes in v1.8 with addition of RepoType.
+                 */
+                db.execSQL("DELETE FROM rooks WHERE repo_id NOT IN (SELECT id FROM repos)")
+                db.execSQL("DELETE FROM versioned_rooks WHERE rook_id NOT IN (SELECT id FROM rooks)")
+                db.execSQL("DELETE FROM book_syncs WHERE versioned_rook_id NOT IN (SELECT id FROM versioned_rooks)")
+                db.execSQL("DELETE FROM book_syncs WHERE book_id NOT IN (SELECT id FROM books)")
+            }
+        }
+
+        private val MIGRATION_154_155 = object : Migration(154, 155) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                /*
+                 * Fix timestamp values in org_timestamps
+                 * https://github.com/orgzly/orgzly-android/issues/704
+                 */
+
+                val query = SupportSQLiteQueryBuilder
+                        .builder("org_timestamps")
+                        .columns(arrayOf("id", "string"))
+                        .create()
+
+                db.query(query).use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        while (!cursor.isAfterLast) {
+                            val id = cursor.getLong(0)
+                            val string = cursor.getString(1)
+
+                            val timestamp = OrgDateTime.doParse(string).calendar.timeInMillis
+
+                            val values = ContentValues().apply {
+                                put("timestamp", timestamp)
+                            }
+
+                            db.update("org_timestamps", SQLiteDatabase.CONFLICT_ROLLBACK, values, "id = $id", null)
+
+                            cursor.moveToNext()
+                        }
+                    }
+                }
             }
         }
     }

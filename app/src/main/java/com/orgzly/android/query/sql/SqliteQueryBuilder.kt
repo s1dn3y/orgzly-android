@@ -66,6 +66,9 @@ class SqliteQueryBuilder(val context: Context) {
                     is SortOrder.Book ->
                         o.add("book_name" + if (order.desc) " DESC" else "")
 
+                    is SortOrder.Title ->
+                        o.add("title" + if (order.desc) " DESC" else "")
+
                     is SortOrder.Scheduled -> {
                         o.add("scheduled_time_timestamp IS NULL")
 
@@ -100,16 +103,14 @@ class SqliteQueryBuilder(val context: Context) {
                         o.add("event_timestamp IS NULL")
 
                         if (order.desc) {
-                            o.add("event_start_of_day DESC")
-                            o.add("event_hour IS NOT NULL")
-                            o.add("event_timestamp DESC")
-                            having = "MAX(event_timestamp)"
+                            o.add("MAX(event_start_of_day) DESC")
+                            o.add("MAX(event_hour) IS NOT NULL")
+                            o.add("MAX(event_timestamp) DESC")
 
                         } else {
-                            o.add("event_start_of_day")
-                            o.add("event_hour IS NULL")
-                            o.add("event_timestamp")
-                            having = "MIN(event_timestamp)"
+                            o.add("MIN(event_start_of_day)")
+                            o.add("MIN(event_hour) IS NULL")
+                            o.add("MIN(event_timestamp)")
                         }
                     }
 
@@ -234,12 +235,12 @@ class SqliteQueryBuilder(val context: Context) {
 
             is Condition.Scheduled -> {
                 hasScheduledCondition = true
-                toInterval("scheduled_time_timestamp", expr.interval, expr.relation)
+                "(scheduled_is_active = 1 AND ${toInterval("scheduled_time_timestamp", expr.interval, expr.relation)})"
             }
 
             is Condition.Deadline -> {
                 hasDeadlineCondition = true
-                toInterval("deadline_time_timestamp", expr.interval, expr.relation)
+                "(deadline_is_active = 1 AND ${toInterval("deadline_time_timestamp", expr.interval, expr.relation)})"
             }
 
             is Condition.Created -> {

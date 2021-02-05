@@ -4,15 +4,19 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Environment;
+
 import com.orgzly.R;
 import com.orgzly.android.App;
 import com.orgzly.org.OrgStatesWorkflow;
 
 import org.eclipse.jgit.transport.URIish;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
 import java.net.URISyntaxException;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -35,6 +39,10 @@ public class AppPreferences {
         return context.getSharedPreferences("state", Context.MODE_PRIVATE);
     }
 
+    public static SharedPreferences getReposSharedPreferences(Context context) {
+        return context.getSharedPreferences("repos", Context.MODE_PRIVATE);
+    }
+
     public static boolean isDoneKeyword(Context context, String state) {
         return state != null && AppPreferences.doneKeywordsSet(context).contains(state);
     }
@@ -44,6 +52,7 @@ public class AppPreferences {
 
         values.defaultPrefsValues = getDefaultSharedPreferences(context).getAll();
         values.statePrefsValues = getStateSharedPreferences(context).getAll();
+        values.reposPrefsValues = getReposSharedPreferences(context).getAll();
 
         return values;
     }
@@ -53,6 +62,7 @@ public class AppPreferences {
 
         setPrefsFromValues(getDefaultSharedPreferences(context), values.defaultPrefsValues);
         setPrefsFromValues(getStateSharedPreferences(context), values.statePrefsValues);
+        setPrefsFromValues(getReposSharedPreferences(context), values.reposPrefsValues);
     }
 
     @SuppressWarnings("unchecked")
@@ -222,10 +232,22 @@ public class AppPreferences {
                 context.getResources().getBoolean(R.bool.pref_default_force_utf8));
     }
 
+    public static boolean notebooksStartFolded(Context context) {
+        return getDefaultSharedPreferences(context).getBoolean(
+                context.getResources().getString(R.string.pref_key_notebooks_start_folded),
+                context.getResources().getBoolean(R.bool.pref_default_notebooks_start_folded));
+    }
+
     public static boolean newNoteNotification(Context context) {
         return getDefaultSharedPreferences(context).getBoolean(
-                context.getResources().getString(R.string.pref_key_new_note_notification),
-                context.getResources().getBoolean(R.bool.pref_default_new_note_notification));
+                context.getResources().getString(R.string.pref_key_ongoing_notification),
+                context.getResources().getBoolean(R.bool.pref_default_ongoing_notification));
+    }
+
+    public static String ongoingNotificationPriority(Context context) {
+        return getDefaultSharedPreferences(context).getString(
+                context.getResources().getString(R.string.pref_key_ongoing_notification_priority),
+                context.getResources().getString(R.string.pref_default_ongoing_notification_priority));
     }
 
     public static boolean remindersForScheduledEnabled(Context context) {
@@ -289,6 +311,17 @@ public class AppPreferences {
         return getDefaultSharedPreferences(context).getString(
                 context.getResources().getString(R.string.pref_key_snooze_type),
                 context.getResources().getString(R.string.pref_default_snooze_type));
+    }
+
+    public static int reminderDailyTime(Context context) {
+        String key = context.getResources().getString(R.string.pref_key_daily_reminder_time);
+        return getDefaultSharedPreferences(context).getInt(key,
+                context.getResources().getInteger(R.integer.pref_default_daily_reminder_time));
+    }
+
+    public static void reminderDailyTime(Context context, int value) {
+        String key = context.getResources().getString(R.string.pref_key_daily_reminder_time);
+        getDefaultSharedPreferences(context).edit().putInt(key, value).apply();
     }
 
     public static boolean showSyncNotifications(Context context) {
@@ -396,6 +429,16 @@ public class AppPreferences {
         return getDefaultSharedPreferences(context).getBoolean(
                 context.getResources().getString(R.string.pref_key_is_new_note_scheduled),
                 context.getResources().getBoolean(R.bool.pref_default_is_new_note_scheduled));
+    }
+
+    /*
+     * Prepend new note.
+     */
+
+    public static boolean isNewNotePrepend(Context context) {
+        return getDefaultSharedPreferences(context).getBoolean(
+                context.getResources().getString(R.string.pref_key_is_new_note_prepend),
+                context.getResources().getBoolean(R.bool.pref_default_is_new_note_prepend));
     }
 
     /*
@@ -553,6 +596,22 @@ public class AppPreferences {
     }
 
     /*
+     * Open note or book on link/breadcrumbs follow.
+     */
+
+    public static String breadcrumbsTarget(Context context) {
+        return getDefaultSharedPreferences(context).getString(
+                context.getResources().getString(R.string.pref_key_breadcrumbs_target),
+                context.getResources().getString(R.string.pref_default_breadcrumbs_target));
+    }
+
+    public static String linkTarget(Context context) {
+        return getDefaultSharedPreferences(context).getString(
+                context.getResources().getString(R.string.pref_key_link_target),
+                context.getResources().getString(R.string.pref_default_link_target));
+    }
+
+    /*
      * Allow inlining images
      */
     public static boolean imagesEnabled(Context context) {
@@ -571,6 +630,25 @@ public class AppPreferences {
         return Integer.valueOf(getDefaultSharedPreferences(context).getString(
                 context.getResources().getString(R.string.pref_key_images_scale_down_to_width_value),
                 context.getResources().getString(R.string.pref_default_images_scale_down_to_width_value)));
+    }
+
+    /*
+     * File relative path.
+     */
+
+    /** Root for file:/xxx links */
+    public static String fileAbsoluteRoot(Context context) {
+        return getDefaultSharedPreferences(context).getString(
+                context.getResources().getString(R.string.pref_key_file_absolute_root),
+                context.getResources().getString(R.string.pref_default_file_absolute_root));
+    }
+
+    /** Root for file:xxx links */
+    public static String fileRelativeRoot(Context context) {
+        return getDefaultSharedPreferences(context).getString(
+                context.getResources().getString(R.string.pref_key_file_relative_root),
+                Environment.getExternalStorageDirectory().getPath()
+        );
     }
 
     /*
@@ -617,6 +695,47 @@ public class AppPreferences {
     }
 
     /*
+     * Note details mode.
+     */
+
+    public static String noteDetailsOpeningMode(Context context) {
+        return getDefaultSharedPreferences(context).getString(
+                context.getResources().getString(R.string.pref_key_note_details_opening_mode),
+                context.getResources().getString(R.string.pref_default_note_details_opening_mode));
+    }
+
+    public static void noteDetailsOpeningMode(Context context, String value) {
+        String key = context.getResources().getString(R.string.pref_key_note_details_opening_mode);
+        getDefaultSharedPreferences(context).edit().putString(key, value).apply();
+    }
+
+    public static String noteDetailsLastMode(Context context) {
+        return getDefaultSharedPreferences(context).getString(
+                context.getResources().getString(R.string.pref_key_note_details_last_mode),
+                context.getResources().getString(R.string.pref_default_note_details_last_mode));
+    }
+
+    public static void noteDetailsLastMode(Context context, String value) {
+        String key = context.getResources().getString(R.string.pref_key_note_details_last_mode);
+        getDefaultSharedPreferences(context).edit().putString(key, value).apply();
+    }
+
+    /*
+     * Content folding state in note details
+     */
+
+    public static boolean isNoteContentFolded(Context context) {
+        return getStateSharedPreferences(context).getBoolean(
+                context.getResources().getString(R.string.pref_key_is_note_content_folded),
+                context.getResources().getBoolean(R.bool.pref_default_is_note_content_folded));
+    }
+
+    public static void isNoteContentFolded(Context context, boolean value) {
+        String key = context.getResources().getString(R.string.pref_key_is_note_content_folded);
+        getStateSharedPreferences(context).edit().putBoolean(key, value).apply();
+    }
+
+    /*
      * Keep screen on menu item
      */
 
@@ -648,6 +767,12 @@ public class AppPreferences {
                 context.getResources().getString(R.string.pref_default_widget_font_size)));
     }
 
+    public static boolean widgetDisplayCheckmarks(Context context) {
+        return getDefaultSharedPreferences(context).getBoolean(
+                context.getResources().getString(R.string.pref_key_widget_display_checkmarks),
+                context.getResources().getBoolean(R.bool.pref_default_widget_display_checkmarks));
+    }
+
     public static int widgetUpdateFrequency(Context context) {
         return Integer.valueOf(getDefaultSharedPreferences(context).getString(
                 context.getResources().getString(R.string.pref_key_widget_update_frequency),
@@ -676,7 +801,13 @@ public class AppPreferences {
 
     public static void dropboxToken(Context context, String value) {
         String key = context.getResources().getString(R.string.pref_key_dropbox_token);
-        getStateSharedPreferences(context).edit().putString(key, value).apply();
+        SharedPreferences.Editor editor = getStateSharedPreferences(context).edit();
+        if (value == null) {
+            editor.remove(key);
+        } else {
+            editor.putString(key, value);
+        }
+        editor.apply();
     }
 
     /*
@@ -709,7 +840,7 @@ public class AppPreferences {
     }
 
     public static String defaultRepositoryStorageDirectory(Context context) {
-        File path = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS);
+        File path = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
         return getStringFromSelector(
                 context, R.string.pref_key_git_default_repository_directory, path.toString());
     }
@@ -856,6 +987,7 @@ public class AppPreferences {
      * Refile history
      */
 
+    @Nullable
     public static String refileLastLocation(Context context) {
         String key = context.getResources().getString(R.string.pref_key_refile_last_location);
         return getStateSharedPreferences(context).getString(key, null);
@@ -864,5 +996,84 @@ public class AppPreferences {
     public static void refileLastLocation(Context context, String value) {
         String key = context.getResources().getString(R.string.pref_key_refile_last_location);
         getStateSharedPreferences(context).edit().putString(key, value).apply();
+    }
+
+    /*
+     * Repository properties map
+     */
+
+    public static void repoPropsMap(Context context, long id, Map<String, String> map) {
+        SharedPreferences prefs = getReposSharedPreferences(context);
+
+        repoPropsMapDelete(context, id);
+
+        SharedPreferences.Editor edit = prefs.edit();
+
+        for (String name: map.keySet()) {
+            String key = repoPropsMapKeyPrefix(id) + name;
+            edit.putString(key, map.get(name));
+        }
+
+        edit.apply();
+    }
+
+    @NotNull
+    public static Map<String, String> repoPropsMap(Context context, long id) {
+        Map<String, String> map = new HashMap<>();
+
+        SharedPreferences prefs = getReposSharedPreferences(context);
+
+        for (String key: repoPropsMapKeys(context, id)) {
+            String name = key.replace(repoPropsMapKeyPrefix(id), "");
+            String value = prefs.getString(key, null);
+            if (value != null) {
+                map.put(name, value);
+            }
+        }
+
+        return map;
+    }
+
+    /**
+     * Delete all preferences belonging to the repository with specified ID.
+     */
+    public static void repoPropsMapDelete(Context context, long id) {
+        SharedPreferences prefs = getReposSharedPreferences(context);
+
+        SharedPreferences.Editor edit = prefs.edit();
+
+        for (String key: repoPropsMapKeys(context, id)) {
+            edit.remove(key);
+        }
+
+        edit.apply();
+    }
+
+    private static Set<String> repoPropsMapKeys(Context context, long id) {
+        Set<String> keys = new HashSet<>();
+
+        SharedPreferences prefs = getReposSharedPreferences(context);
+
+        for (String key: prefs.getAll().keySet()) {
+            if (key.startsWith(repoPropsMapKeyPrefix(id))) {
+                keys.add(key);
+            }
+        }
+
+        return keys;
+    }
+
+    public static void repoPropsMapDelete(Context context) {
+        SharedPreferences prefs = getReposSharedPreferences(context);
+        prefs.edit().clear().apply();
+    }
+
+    /**
+     * We're using the same SharedPreferences file to easily clean up values of deleted
+     * repositories. Deleting individual per-repository files might not be trivial as preferences
+     * are stored in memory and it's not clear (?) when the backing file is written to.
+     */
+    private static String repoPropsMapKeyPrefix(long id) {
+        return "id-" + id + "-";
     }
 }

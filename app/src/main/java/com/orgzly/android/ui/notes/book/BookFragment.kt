@@ -3,22 +3,19 @@ package com.orgzly.android.ui.notes.book
 import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.content.Context
-import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.util.Log
 import android.view.*
-import android.widget.FrameLayout
-import android.widget.ViewFlipper
 import androidx.appcompat.view.ActionMode
 import androidx.appcompat.widget.Toolbar
 import androidx.lifecycle.Observer
 import androidx.lifecycle.ViewModelProviders
 import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import com.orgzly.BuildConfig
 import com.orgzly.R
 import com.orgzly.android.BookUtils
+import com.orgzly.android.db.NotesClipboard
 import com.orgzly.android.db.entity.Book
 import com.orgzly.android.db.entity.NoteView
 import com.orgzly.android.prefs.AppPreferences
@@ -31,8 +28,12 @@ import com.orgzly.android.ui.notes.NotesFragment
 import com.orgzly.android.ui.notes.quickbar.ItemGestureDetector
 import com.orgzly.android.ui.notes.quickbar.QuickBarListener
 import com.orgzly.android.ui.notes.quickbar.QuickBars
+import com.orgzly.android.ui.refile.RefileFragment
 import com.orgzly.android.ui.util.ActivityUtils
+import com.orgzly.android.ui.util.setup
+import com.orgzly.android.ui.util.styledAttributes
 import com.orgzly.android.util.LogUtils
+import com.orgzly.databinding.FragmentNotesBookBinding
 
 
 /**
@@ -49,20 +50,20 @@ class BookFragment :
         BookAdapter.OnClickListener,
         QuickBarListener {
 
+    private lateinit var binding: FragmentNotesBookBinding
+
     private var listener: Listener? = null
 
     private lateinit var viewAdapter: BookAdapter
 
     private lateinit var layoutManager: LinearLayoutManager
 
-    private lateinit var recyclerView: RecyclerView
-
     private lateinit var sharedMainActivityViewModel: SharedMainActivityViewModel
 
     private lateinit var viewModel: BookViewModel
 
-    override fun getAdapter(): BookAdapter {
-        return viewAdapter
+    override fun getAdapter(): BookAdapter? {
+        return if (::viewAdapter.isInitialized) viewAdapter else null
     }
 
     override fun getCurrentListener(): NotesFragment.Listener? {
@@ -75,9 +76,6 @@ class BookFragment :
 
     private var mActionModeTag: String? = null
 
-    /** Used for different states after loading the notebook and notes. */
-    private lateinit var viewFlipper: ViewFlipper
-
     /**
      * Mandatory empty constructor for the fragment manager to instantiate the
      * fragment (e.g. upon screen orientation changes).
@@ -88,20 +86,21 @@ class BookFragment :
 
 
     override fun onAttach(context: Context) {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, context)
         super.onAttach(context)
+
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, context)
 
         listener = activity as Listener
         actionModeListener = activity as ActionModeListener
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, savedInstanceState)
         super.onCreate(savedInstanceState)
 
-        sharedMainActivityViewModel = activity?.let {
-            ViewModelProviders.of(it).get(SharedMainActivityViewModel::class.java)
-        } ?: throw IllegalStateException("No Activity")
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, savedInstanceState)
+
+        sharedMainActivityViewModel = ViewModelProviders.of(requireActivity())
+                .get(SharedMainActivityViewModel::class.java)
 
         /* Would like to add items to the Options Menu.
          * Required (for fragments only) to receive onCreateOptionsMenu() call.
@@ -119,26 +118,25 @@ class BookFragment :
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG)
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, savedInstanceState)
 
-        val view = inflater.inflate(R.layout.fragment_notes_book, container, false)
+        binding = FragmentNotesBookBinding.inflate(inflater, container, false)
 
-        viewFlipper = view.findViewById<View>(R.id.fragment_book_view_flipper) as ViewFlipper
-
-        setupRecyclerView(view)
-
-        return view
+        return binding.root
     }
 
-    private fun setupRecyclerView(view: View) {
-        val quickBars = QuickBars(view.context, true)
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        val quickBars = QuickBars(binding.root.context, true)
 
-        viewAdapter = BookAdapter(view.context, this, quickBars, inBook = true)
+        viewAdapter = BookAdapter(binding.root.context, this, quickBars, inBook = true)
         viewAdapter.setHasStableIds(true)
+
+        // Restores selection, requires adapter
+        super.onViewCreated(view, savedInstanceState)
 
         layoutManager = LinearLayoutManager(context)
 
-        recyclerView = view.findViewById<RecyclerView>(R.id.fragment_notes_book_recycler_view).also { rv ->
+        binding.fragmentNotesBookRecyclerView.let { rv ->
             rv.layoutManager = layoutManager
             rv.adapter = viewAdapter
 
@@ -169,6 +167,8 @@ class BookFragment :
 //
 //            itemTouchHelper.attachToRecyclerView(rv)
         }
+
+        binding.swipeContainer.setup()
     }
 
     override fun onQuickBarButtonClick(buttonId: Int, itemId: Long) {
@@ -176,13 +176,14 @@ class BookFragment :
     }
 
     override fun onActivityCreated(savedInstanceState: Bundle?) {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, savedInstanceState)
         super.onActivityCreated(savedInstanceState)
+
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, savedInstanceState)
 
         viewModel.viewState.observe(viewLifecycleOwner, Observer { state ->
             if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, "Observed load state: $state")
 
-            viewFlipper.apply {
+            binding.fragmentBookViewFlipper.apply {
                 displayedChild = when (state) {
                     BookViewModel.ViewState.LOADING -> 0
                     BookViewModel.ViewState.LOADED -> 1
@@ -232,6 +233,27 @@ class BookFragment :
 
             updateViewState(notes)
         })
+
+        viewModel.refileRequestEvent.observeSingle(viewLifecycleOwner, Observer {
+            RefileFragment.getInstance(it.selected, it.count)
+                    .show(requireFragmentManager(), RefileFragment.FRAGMENT_TAG)
+        })
+
+        viewModel.notesDeleteRequest.observeSingle(viewLifecycleOwner, Observer { pair ->
+            val ids = pair.first
+            val count = pair.second
+
+            val question = resources.getQuantityString(
+                    R.plurals.delete_note_or_notes_with_count_question, count, count)
+
+            dialog = AlertDialog.Builder(context)
+                    .setTitle(question)
+                    .setPositiveButton(R.string.delete) { _, _ ->
+                        listener?.onNotesDeleteRequest(mBookId, ids)
+                    }
+                    .setNegativeButton(R.string.cancel) { _, _ -> }
+                    .show()
+        })
     }
 
     private fun updateViewState(notes: List<NoteView>?) {
@@ -252,27 +274,29 @@ class BookFragment :
     }
 
     override fun onDestroyView() {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG)
         super.onDestroyView()
+
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG)
     }
 
     override fun onDetach() {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG)
         super.onDetach()
+
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG)
 
         listener = null
     }
 
     private fun parseArguments() {
         arguments?.let {
-            if (!it.containsKey(ARG_BOOK_ID)) {
-                throw IllegalArgumentException("No book id passed")
+            require(it.containsKey(ARG_BOOK_ID)) {
+                "No book id passed"
             }
 
             mBookId = it.getLong(ARG_BOOK_ID)
 
-            if (mBookId <= 0) {
-                throw IllegalArgumentException("Passed book id $mBookId is not valid")
+            require(mBookId > 0) {
+                "Passed book id $mBookId is not valid"
             }
         } ?: throw IllegalArgumentException("No arguments passed")
     }
@@ -304,6 +328,21 @@ class BookFragment :
         if (currentBook == null) {
             menu.removeItem(R.id.books_options_menu_book_preface)
         }
+
+        // Hide paste button if clipboard is empty, update title if not
+        menu.findItem(R.id.book_actions_paste)?.apply {
+            val count = NotesClipboard.count()
+
+            if (count == 0) {
+                isVisible = false
+
+            } else {
+                title = resources.getQuantityString(
+                        R.plurals.paste_note_or_notes_with_count, count, count)
+
+                isVisible = true
+            }
+        }
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
@@ -312,6 +351,11 @@ class BookFragment :
         when (item.itemId) {
             R.id.books_options_menu_item_cycle_visibility -> {
                 viewModel.cycleVisibility()
+                return true
+            }
+
+            R.id.book_actions_paste -> {
+                pasteNotes(Place.UNDER, 0)
                 return true
             }
 
@@ -370,7 +414,7 @@ class BookFragment :
                 if (id == noteId) {
                     scrollToPosition(i)
 
-                    recyclerView.post {
+                    binding.fragmentNotesBookRecyclerView.post {
                         spotlightScrolledToView(i)
                     }
 
@@ -395,16 +439,15 @@ class BookFragment :
 
     private fun spotlightScrolledToView(position: Int) {
         layoutManager.findViewByPosition(position)?.let {
-            // highlightScrolledToIndent(it)
             highlightScrolledToView(it)
         }
     }
 
     @SuppressLint("ClickableViewAccessibility")
     private fun highlightScrolledToView(view: View) {
-        val arr = view.context.obtainStyledAttributes(R.styleable.ColorScheme)
-        val selectionBgColor = arr.getColor(R.styleable.ColorScheme_item_spotlighted_bg_color, 0)
-        arr.recycle()
+        val selectionBgColor = view.context.styledAttributes(R.styleable.ColorScheme) { typedArray ->
+            typedArray.getColor(R.styleable.ColorScheme_item_spotlighted_bg_color, 0)
+        }
 
         view.setBackgroundColor(selectionBgColor)
 
@@ -415,45 +458,6 @@ class BookFragment :
                 runOnTouchEvent = null
             }
         }
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private fun highlightScrolledToIndent(view: View) {
-        val arr = view.context.obtainStyledAttributes(R.styleable.ColorScheme)
-        val spotlightColor = arr.getColor(R.styleable.ColorScheme_text_disabled_color, 0)
-        arr.recycle()
-
-        val indent = getIndentView(view) ?: return
-
-//        val originalWidth = indent.layoutParams.width
-//        indent.layoutParams.width = (2 * view.context.resources.displayMetrics.density).toInt()
-//        indent.requestLayout()
-
-        val originalColor = (indent.background as? ColorDrawable)?.color ?: 0
-        indent.setBackgroundColor(spotlightColor)
-
-        // Reset background color on touch
-        (activity as? CommonActivity)?.apply {
-            runOnTouchEvent = Runnable {
-                indent.setBackgroundColor(originalColor)
-//                indent.layoutParams.width = originalWidth
-//                indent.requestLayout()
-                runOnTouchEvent = null
-            }
-        }
-    }
-
-    private fun getIndentView(view: View): View? {
-        view.findViewById<ViewGroup>(R.id.item_head_indent_container)?.let { indents ->
-            if (indents.tag is Int) { // Number of indents
-                (indents.tag as Int - 1).let { last ->
-                    if (last in 0 until indents.childCount) {
-                        return (indents.getChildAt(last) as FrameLayout).getChildAt(0)
-                    }
-                }
-            }
-        }
-        return null
     }
 
     private fun announceChangesToActivity() {
@@ -474,14 +478,7 @@ class BookFragment :
     }
 
     private fun delete(ids: Set<Long>) {
-        dialog = AlertDialog.Builder(context)
-                .setTitle(R.string.delete_notes)
-                .setMessage(R.string.delete_notes_and_all_subnotes)
-                .setPositiveButton(R.string.delete) { _, _ ->
-                    listener?.onNotesDeleteRequest(mBookId, ids)
-                }
-                .setNegativeButton(R.string.cancel) { _, _ -> }
-                .show()
+        viewModel.requestNotesDelete(ids)
     }
 
     override fun getCurrentDrawerItemId(): String {
@@ -491,18 +488,18 @@ class BookFragment :
     override fun onNoteClick(view: View, position: Int, noteView: NoteView) {
         if (!AppPreferences.isReverseNoteClickAction(context)) {
             if (viewAdapter.getSelection().count > 0) {
-                toggleNoteSelection(view, position, noteView)
+                toggleNoteSelection(position, noteView)
             } else {
                 openNote(noteView.note.id)
             }
         } else {
-            toggleNoteSelection(view, position, noteView)
+            toggleNoteSelection(position, noteView)
         }
     }
 
     override fun onNoteLongClick(view: View, position: Int, noteView: NoteView) {
         if (!AppPreferences.isReverseNoteClickAction(context)) {
-            toggleNoteSelection(view, position, noteView)
+            toggleNoteSelection(position, noteView)
         } else {
             openNote(noteView.note.id)
         }
@@ -512,7 +509,7 @@ class BookFragment :
         listener?.onNoteOpen(id)
     }
 
-    private fun toggleNoteSelection(view: View, position: Int, noteView: NoteView) {
+    private fun toggleNoteSelection(position: Int, noteView: NoteView) {
         val noteId = noteView.note.id
 
         if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, listener, noteView)
@@ -683,7 +680,7 @@ class BookFragment :
 
             R.id.quick_bar_refile,
             R.id.book_cab_refile ->
-                openNoteRefileDialog(ids)
+                viewModel.refile(ids)
 
             R.id.book_cab_paste_under -> {
                 pasteNotes(Place.UNDER, ids.first())

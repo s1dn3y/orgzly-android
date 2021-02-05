@@ -1,24 +1,29 @@
 package com.orgzly.android.espresso;
 
+import android.app.Activity;
+import android.content.pm.ActivityInfo;
+import android.os.SystemClock;
 import android.text.format.DateFormat;
 import android.view.View;
 import android.widget.DatePicker;
 import android.widget.TimePicker;
 
+import androidx.test.core.app.ActivityScenario;
+
+import com.orgzly.BuildConfig;
 import com.orgzly.R;
 import com.orgzly.android.OrgzlyTest;
 import com.orgzly.android.db.entity.NotePosition;
+import com.orgzly.android.repos.RepoType;
 import com.orgzly.android.ui.main.MainActivity;
 import com.orgzly.android.ui.repos.ReposActivity;
 
 import org.hamcrest.Matcher;
-import org.junit.Rule;
+import org.junit.Assume;
 import org.junit.Test;
 
 import java.util.Calendar;
 import java.util.GregorianCalendar;
-
-import androidx.test.rule.ActivityTestRule;
 
 import static androidx.test.espresso.Espresso.onView;
 import static androidx.test.espresso.Espresso.pressBack;
@@ -50,8 +55,6 @@ import static com.orgzly.android.espresso.EspressoUtils.replaceTextCloseKeyboard
 import static com.orgzly.android.espresso.EspressoUtils.searchForText;
 import static com.orgzly.android.espresso.EspressoUtils.settingsSetDoneKeywords;
 import static com.orgzly.android.espresso.EspressoUtils.settingsSetTodoKeywords;
-import static com.orgzly.android.espresso.EspressoUtils.toLandscape;
-import static com.orgzly.android.espresso.EspressoUtils.toPortrait;
 import static com.orgzly.android.espresso.EspressoUtils.toolbarItemCount;
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.anyOf;
@@ -61,18 +64,12 @@ import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.startsWith;
 import static org.junit.Assert.assertTrue;
 
-
-//@Ignore
-@SuppressWarnings("unchecked")
 public class MiscTest extends OrgzlyTest {
-    @Rule
-    public ActivityTestRule activityRule = new EspressoActivityTestRule<>(MainActivity.class, true, false);
-
     @Test
     public void testLftRgt() {
         testUtils.setupBook("booky", "Preface\n* Note 1\n** Note 2\n* Note 3\n");
 
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         NotePosition n1 = dataRepository.getLastNote("Note 1").getPosition();
         NotePosition n2 = dataRepository.getLastNote("Note 2").getPosition();
@@ -100,7 +97,7 @@ public class MiscTest extends OrgzlyTest {
                         "* Note #2.\n" +
                         "** TODO Note #3.\n");
 
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onView(withId(R.id.fragment_books_view_flipper)).check(matches(isDisplayed()));
 
@@ -123,7 +120,8 @@ public class MiscTest extends OrgzlyTest {
     @Test
     public void testClickOnListViewItemOutOfView() {
         testUtils.setupBook("book-one", "Sample book used for tests\n* 1\n* 2\n* 3\n* 4\n* 5\n* 6\n* 7\n* 8\n* 9\n* 10\n* 11\n* 12\n* 13\n* 14\n* 15\n");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
+
         onBook(0).perform(click());
         onView(withId(R.id.fragment_book_view_flipper)).check(matches(isDisplayed()));
         onNoteInBook(15, R.id.item_head_title)
@@ -141,7 +139,7 @@ public class MiscTest extends OrgzlyTest {
                         "*** DONE Note #5.\n" +
                         "CLOSED: [2014-06-03 Tue 13:34]\n" +
                         "");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onView(allOf(withText("book-name"), isDisplayed())).perform(click());
 
@@ -158,23 +156,23 @@ public class MiscTest extends OrgzlyTest {
         onView(withText("DONE")).perform(click());
 
         onNoteInBook(1, R.id.item_head_title).check(matches(allOf(withText("DONE  Note #1."), isDisplayed())));
-        onNoteInBook(1, R.id.item_head_closed).check(matches(isDisplayed()));
+        onNoteInBook(1, R.id.item_head_closed_text).check(matches(isDisplayed()));
         onNoteInBook(1).check(matches(isHighlighted()));
 
         onNoteInBook(2, R.id.item_head_title).check(matches(allOf(withText("DONE  Note #2."), isDisplayed())));
-        onNoteInBook(2, R.id.item_head_closed).check(matches(isDisplayed()));
+        onNoteInBook(2, R.id.item_head_closed_text).check(matches(isDisplayed()));
         onNoteInBook(2).check(matches(isHighlighted()));
 
         onNoteInBook(3, R.id.item_head_title).check(matches(allOf(withText("DONE  Note #3."), isDisplayed())));
-        onNoteInBook(3, R.id.item_head_closed).check(matches(isDisplayed()));
+        onNoteInBook(3, R.id.item_head_closed_text).check(matches(isDisplayed()));
         onNoteInBook(3).check(matches(isHighlighted()));
 
         onNoteInBook(4, R.id.item_head_title).check(matches(allOf(withText("Note #4."), isDisplayed())));
-        onNoteInBook(4, R.id.item_head_closed).check(matches(not(isDisplayed())));
+        onNoteInBook(4, R.id.item_head_closed_text).check(matches(not(isDisplayed())));
         onNoteInBook(4).check(matches(not(isHighlighted())));
 
         onNoteInBook(5, R.id.item_head_title).check(matches(allOf(withText("DONE  Note #5."), isDisplayed())));
-        onNoteInBook(5, R.id.item_head_closed).check(matches(isDisplayed()));
+        onNoteInBook(5, R.id.item_head_closed_text).check(matches(isDisplayed()));
         onNoteInBook(5).check(matches(not(isHighlighted())));
     }
 
@@ -189,7 +187,7 @@ public class MiscTest extends OrgzlyTest {
                         "*** DONE Note #5.\n" +
                         "CLOSED: [2014-06-03 Tue 13:34]\n" +
                         "");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onView(allOf(withText("book-name"), isDisplayed())).perform(click());
 
@@ -203,10 +201,10 @@ public class MiscTest extends OrgzlyTest {
         onNoteInBook(2).perform(click());
         onNoteInBook(3).perform(click());
         onView(withId(R.id.bottom_action_bar_schedule)).perform(click());
-        onView(withId(R.id.dialog_timestamp_date_picker)).perform(click());
+        onView(withId(R.id.date_picker_button)).perform(click());
         onView(withClassName(equalTo(DatePicker.class.getName()))).perform(setDate(2014, 4, 1));
         onView(anyOf(withText(R.string.ok), withText(R.string.done))).perform(click());
-        onView(withId(R.id.dialog_timestamp_time_picker)).perform(scrollTo(), click());
+        onView(withId(R.id.time_picker_button)).perform(scrollTo(), click());
         onView(withClassName(equalTo(TimePicker.class.getName()))).perform(setTime(9, 15));
         onView(anyOf(withText(R.string.ok), withText(R.string.done))).perform(click());
         onView(withText(R.string.set)).perform(click());
@@ -221,7 +219,7 @@ public class MiscTest extends OrgzlyTest {
     @Test
     public void testTrimmingTitleInNoteFragment() {
         testUtils.setupBook("book-one", "Sample book used for tests\n* 1\n* 2\n* 3\n");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
         onBook(0).perform(click());
         onView(withId(R.id.fab)).perform(click());
 
@@ -237,11 +235,17 @@ public class MiscTest extends OrgzlyTest {
 
     @Test
     public void testNewBookDialogShouldSurviveScreenRotation() {
-        activityRule.launchActivity(null);
-        toLandscape(activityRule);
+        ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class);
+
+        scenario.onActivity(activity ->
+                activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE));
+
         onView(withId(R.id.fab)).perform(click());
         onView(withId(R.id.dialog_new_book_container)).check(matches(isDisplayed()));
-        toPortrait(activityRule);
+
+        scenario.onActivity(activity ->
+                activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT));
+
         onView(withId(R.id.dialog_new_book_container)).check(matches(isDisplayed()));
         onView(withId(R.id.dialog_input)).perform(replaceTextCloseKeyboard("notebook"));
         onView(withText(R.string.create)).perform(click());
@@ -254,13 +258,18 @@ public class MiscTest extends OrgzlyTest {
     @Test
     public void testBottomActionBarShouldSurviveScreenRotation() {
         testUtils.setupBook("book-name", "* Note");
-        activityRule.launchActivity(null);
+        ActivityScenario<MainActivity> scenario =ActivityScenario.launch(MainActivity.class);
+
         onBook(0).perform(click());
         onView(withId(R.id.bottom_action_bar)).check(matches(toolbarItemCount(0)));
         onNoteInBook(1).perform(longClick());
         onView(withId(R.id.bottom_action_bar)).check(matches(not(toolbarItemCount(0))));
-        toLandscape(activityRule);
-        toPortrait(activityRule);
+
+        scenario.onActivity(activity -> {
+            activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+            activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        });
+
         onView(withId(R.id.bottom_action_bar)).check(matches(not(toolbarItemCount(0))));
     }
 
@@ -271,7 +280,8 @@ public class MiscTest extends OrgzlyTest {
     @Test
     public void testBookTitleMustBeDisplayedWhenOpeningBookFromDrawer() {
         testUtils.setupBook("book-one", "Sample book used for tests\n* 1\n* 2\n* 3\n");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
+
         onView(allOf(withText(R.string.notebooks), isDescendantOfA(withId(R.id.toolbar)))).check(matches(isDisplayed()));
         onView(withId(R.id.drawer_layout)).perform(open());
         onView(allOf(withText("book-one"), isDescendantOfA(withId(R.id.drawer_navigation_view)))).perform(click());
@@ -285,7 +295,7 @@ public class MiscTest extends OrgzlyTest {
                 "SCHEDULED: <2015-01-18 04:05 +6d>\n" +
                 "* Note #2.\n" +
                 "");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onBook(0).perform(click());
 
@@ -295,11 +305,11 @@ public class MiscTest extends OrgzlyTest {
         String s = DateFormat.getTimeFormat(context).format(cal.getTime());
 
         onView(withId(R.id.fragment_note_scheduled_button)).perform(click());
-        onView(withId(R.id.dialog_timestamp_time_picker)).check(matches(withText(containsString(s))));
-        onView(withId(R.id.dialog_timestamp_time_check)).perform(scrollTo(), click());
-        onView(withId(R.id.dialog_timestamp_time_picker)).check(matches(withText(containsString(s))));
-        onView(withId(R.id.dialog_timestamp_time_check)).perform(click());
-        onView(withId(R.id.dialog_timestamp_time_picker)).check(matches(withText(containsString(s))));
+        onView(withId(R.id.time_picker_button)).check(matches(withText(containsString(s))));
+        onView(withId(R.id.time_used_checkbox)).perform(scrollTo(), click());
+        onView(withId(R.id.time_picker_button)).check(matches(withText(containsString(s))));
+        onView(withId(R.id.time_used_checkbox)).perform(click());
+        onView(withId(R.id.time_picker_button)).check(matches(withText(containsString(s))));
     }
 
     @Test
@@ -310,7 +320,7 @@ public class MiscTest extends OrgzlyTest {
                         "SCHEDULED: <2015-01-18 04:05 .+6d>\n" +
                         "* Note #2.\n" +
                         "");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onView(allOf(withText("book-name"), isDisplayed())).perform(click());
 
@@ -324,7 +334,7 @@ public class MiscTest extends OrgzlyTest {
                 "SCHEDULED: <2015-01-18 04:05 +6d>\n" +
                 "* Note #2.\n" +
                 "");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         settingsSetDoneKeywords("DONE OLD");
 
@@ -336,28 +346,28 @@ public class MiscTest extends OrgzlyTest {
         onView(withId(R.id.bottom_action_bar_state)).perform(click());
         onView(withText("DONE")).perform(click());
         onNoteInBook(1, R.id.item_head_title).check(matches(withText(startsWith("TODO"))));
-        onNoteInBook(1, R.id.item_head_closed).check(matches(not(isDisplayed())));
+        onNoteInBook(1, R.id.item_head_closed_text).check(matches(not(isDisplayed())));
         onNoteInBook(1, R.id.item_head_scheduled_text).check(matches(withText(userDateTime("<2015-01-24 Sat 04:05 +6d>"))));
 
         /* DONE -> NOTE */
         onView(withId(R.id.bottom_action_bar_state)).perform(click());
         onView(withText(R.string.clear)).perform(click());
         onNoteInBook(1, R.id.item_head_title).check(matches(withText(startsWith("Note"))));
-        onNoteInBook(1, R.id.item_head_closed).check(matches(not(isDisplayed())));
+        onNoteInBook(1, R.id.item_head_closed_text).check(matches(not(isDisplayed())));
         onNoteInBook(1, R.id.item_head_scheduled_text).check(matches(withText(userDateTime("<2015-01-24 Sat 04:05 +6d>"))));
 
         /* NOTE -> DONE */
         onView(withId(R.id.bottom_action_bar_state)).perform(click());
         onView(withText("DONE")).perform(click());
         onNoteInBook(1, R.id.item_head_title).check(matches(withText(startsWith("Note"))));
-        onNoteInBook(1, R.id.item_head_closed).check(matches(not(isDisplayed())));
+        onNoteInBook(1, R.id.item_head_closed_text).check(matches(not(isDisplayed())));
         onNoteInBook(1, R.id.item_head_scheduled_text).check(matches(withText(userDateTime("<2015-01-30 Fri 04:05 +6d>"))));
 
         /* NOTE -> OLD */
         onView(withId(R.id.bottom_action_bar_state)).perform(click());
         onView(withText("OLD")).perform(click());
         onNoteInBook(1, R.id.item_head_title).check(matches(withText(startsWith("Note"))));
-        onNoteInBook(1, R.id.item_head_closed).check(matches(not(isDisplayed())));
+        onNoteInBook(1, R.id.item_head_closed_text).check(matches(not(isDisplayed())));
         onNoteInBook(1, R.id.item_head_scheduled_text).check(matches(withText(userDateTime("<2015-02-05 Thu 04:05 +6d>"))));
     }
 
@@ -369,7 +379,7 @@ public class MiscTest extends OrgzlyTest {
                         "SCHEDULED: <2015-01-18 04:05 +6d>\n" +
                         "* Note #2.\n" +
                         "");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         settingsSetDoneKeywords("DONE OLD");
 
@@ -406,7 +416,7 @@ public class MiscTest extends OrgzlyTest {
     @Test
     public void testSettingStateToTodo() {
         testUtils.setupBook("booky", "* TODO Note 1\n* Note 2\n* Note 3\n* Note 4\n* TODO Note 5");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onView(allOf(withText("booky"), isDisplayed())).perform(click());
 
@@ -432,85 +442,98 @@ public class MiscTest extends OrgzlyTest {
     /**
      * Visits every fragment used in the main activity and calls {@link #fragmentTest} on it.
      */
+
+    private Activity activity;
     @Test
     public void testMainActivityFragments() {
-        testUtils.setupRepo("file:/");
-        testUtils.setupRepo("dropbox:/orgzly");
+        testUtils.setupRepo(RepoType.DIRECTORY, "file:/");
+        testUtils.setupRepo(RepoType.DROPBOX, "dropbox:/orgzly");
         testUtils.setupBook("book-one", "Preface\n\n* Note");
-        activityRule.launchActivity(null);
+
+        ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class);
+
+        scenario.onActivity(it -> activity = it);
 
         // Books
-        fragmentTest(activityRule, true, withId(R.id.fragment_books_view_flipper));
+        fragmentTest(activity, true, withId(R.id.fragment_books_view_flipper));
 
         // Book
         onBook(0).perform(click());
-        fragmentTest(activityRule, true, withId(R.id.fragment_book_view_flipper));
+        fragmentTest(activity, true, withId(R.id.fragment_book_view_flipper));
 
         // Note
         onView(withText("Note")).perform(click());
-        fragmentTest(activityRule, false, withId(R.id.fragment_note_container));
+        fragmentTest(activity, false, withId(R.id.fragment_note_container));
         pressBack();
 
         // Preface
         onPreface().perform(click());
-        fragmentTest(activityRule, false, withId(R.id.fragment_book_preface_container));
+        fragmentTest(activity, false, withId(R.id.fragment_book_preface_container));
 
         // Opened drawer
         onView(withId(R.id.drawer_layout)).perform(open());
-        fragmentTest(activityRule, false, withText(R.string.searches));
+        fragmentTest(activity, false, withText(R.string.searches));
 
         // Saved searches
         onView(withId(R.id.drawer_layout)).perform(open());
         onView(withText(R.string.searches)).perform(click());
-        fragmentTest(activityRule, true, withId(R.id.fragment_saved_searches_flipper));
+        fragmentTest(activity, true, withId(R.id.fragment_saved_searches_flipper));
 
         // Search
         onSavedSearch(0).perform(click());
-        fragmentTest(activityRule, false, withId(R.id.fragment_saved_search_flipper));
+        fragmentTest(activity, false, withId(R.id.fragment_saved_search_flipper));
 
         // Search results
         onView(withId(R.id.drawer_layout)).perform(open());
         onView(withText("Scheduled")).perform(click());
-        fragmentTest(activityRule, true, withId(R.id.fragment_query_search_view_flipper));
+        fragmentTest(activity, true, withId(R.id.fragment_query_search_view_flipper));
 
         // Agenda
         searchForText("t.tag3 ad.3");
-        fragmentTest(activityRule, true, withId(R.id.fragment_query_agenda_view_flipper));
+        fragmentTest(activity, true, withId(R.id.fragment_query_agenda_view_flipper));
     }
 
     @Test
     public void testReposActivityFragments() {
-        ActivityTestRule rule = new EspressoActivityTestRule<>(ReposActivity.class, true, false);
+        Assume.assumeTrue(BuildConfig.IS_DROPBOX_ENABLED);
 
-        testUtils.setupRepo("file:/");
-        testUtils.setupRepo("dropbox:/orgzly");
+        testUtils.setupRepo(RepoType.DIRECTORY, "file:/");
+        testUtils.setupRepo(RepoType.DROPBOX, "dropbox:/orgzly");
         testUtils.setupBook("book-one", "Preface\n\n* Note");
-        rule.launchActivity(null);
+
+        ActivityScenario<ReposActivity> scenario = ActivityScenario.launch(ReposActivity.class);
+
+        scenario.onActivity(it -> activity = it);
 
         // List of repos
-        fragmentTest(rule, false, withId(R.id.activity_repos_flipper));
+        fragmentTest(activity, false, withId(R.id.activity_repos_flipper));
 
         // Directory repo
         onListItem(1).perform(click());
-        fragmentTest(rule, false, withId(R.id.activity_repo_directory_container));
+        fragmentTest(activity, false, withId(R.id.activity_repo_directory_container));
         pressBack();
 
         // Dropbox repo
         onListItem(0).perform(click());
-        fragmentTest(rule, false, withId(R.id.activity_repo_dropbox_container));
+        fragmentTest(activity, false, withId(R.id.activity_repo_dropbox_container));
     }
 
-    private void fragmentTest(ActivityTestRule rule, boolean hasSearchMenuItem, Matcher<View> matcher) {
+    private void fragmentTest(Activity activity, boolean hasSearchMenuItem, Matcher<View> matcher) {
         onView(matcher).check(matches(isDisplayed()));
-        toPortrait(rule);
+        activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        SystemClock.sleep(500);
         onView(matcher).check(matches(isDisplayed()));
-        toLandscape(rule);
+        activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        SystemClock.sleep(500);
         onView(matcher).check(matches(isDisplayed()));
-        toPortrait(rule);
+        activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        SystemClock.sleep(500);
         onView(matcher).check(matches(isDisplayed()));
-        toLandscape(rule);
+        activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        SystemClock.sleep(500);
         onView(matcher).check(matches(isDisplayed()));
-        toPortrait(rule);
+        activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        SystemClock.sleep(500);
 
         if (hasSearchMenuItem) {
             onView(withId(R.id.activity_action_search)).check(matches(isDisplayed()));
@@ -522,7 +545,7 @@ public class MiscTest extends OrgzlyTest {
     @Test
     public void testBookTitleFromInBufferSettingsDisplayed() {
         testUtils.setupBook("book-name", "#+TITLE: Notebook Title\n* TODO Note #1.\n");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         /* Books fragment. */
         onBook(0, R.id.item_book_title).check(matches(withText("Notebook Title")));
@@ -536,7 +559,7 @@ public class MiscTest extends OrgzlyTest {
     @Test
     public void testBookTitleSettingIsPartOfPreface() {
         testUtils.setupBook("book-name", "#+TITLE: Notebook Title\n* TODO Note #1.\n");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onView(allOf(withText("Notebook Title"), isDisplayed())).perform(click());
         onNoteInBook(0, R.id.fragment_book_header_text)
@@ -546,7 +569,7 @@ public class MiscTest extends OrgzlyTest {
     @Test
     public void testBookTitleChangeOnPrefaceEdit() {
         testUtils.setupBook("book-name", "* TODO Note #1.\n");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onBook(0, R.id.item_book_title).check(matches(withText("book-name")));
 
@@ -564,7 +587,7 @@ public class MiscTest extends OrgzlyTest {
     @Test
     public void testBookTitleRemoving() {
         testUtils.setupBook("book-name", "#+TITLE: Notebook Title\n* TODO Note #1.\n");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onBook(0, R.id.item_book_title).check(matches(withText("Notebook Title")));
         onBook(0, R.id.item_book_subtitle).check(matches(withText("book-name")));
@@ -598,7 +621,7 @@ public class MiscTest extends OrgzlyTest {
                         "**** Note #9.\n" +
                         "** Note #10.\n" +
                         "");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onBook(0).perform(click());
         onNoteInBook(8, R.id.item_head_title)
@@ -616,7 +639,7 @@ public class MiscTest extends OrgzlyTest {
     @Test
     public void testCabStaysOpenWhenSelectingTheSameBookFromDrawer() {
         testUtils.setupBook("booky", "* TODO Note 1\n* Note 2\n* Note 3\n* Note 4\n* TODO Note 5");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onBook(0).perform(click());
         onNoteInBook(3).perform(longClick());
@@ -629,7 +652,8 @@ public class MiscTest extends OrgzlyTest {
 
     @Test
     public void testNewlyCreatedBookShouldNotHaveEncodingsDisplayed() {
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
+
         onView(withId(R.id.fab)).perform(click());
         onView(withId(R.id.dialog_input)).perform(replaceTextCloseKeyboard("booky"));
         onView(withText(R.string.create)).perform(click());
@@ -642,7 +666,7 @@ public class MiscTest extends OrgzlyTest {
     public void testSelectingNoteThenOpeningAnotherBook() {
         testUtils.setupBook("booky-one", "* TODO Note 1\n* Note 2\n* Note 3\n* Note 4\n* TODO Note 5");
         testUtils.setupBook("booky-two", "* TODO Note A\n* Note B\n* Note C");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onBook(0).perform(click());
         onNoteInBook(1).perform(longClick());
@@ -660,7 +684,7 @@ public class MiscTest extends OrgzlyTest {
     public void testOpenBookAlreadyInBackStack() {
         testUtils.setupBook("booky-one", "* TODO Note 1\n* Note 2\n* Note 3\n* Note 4\n* TODO Note 5");
         testUtils.setupBook("booky-two", "* TODO Note A\n* Note B\n* Note C");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onBook(0).perform(click());
         onView(withId(R.id.fragment_book_view_flipper)).check(matches(isDisplayed()));
@@ -674,7 +698,7 @@ public class MiscTest extends OrgzlyTest {
     @Test(expected = IllegalStateException.class)
     public void testCheckboxInTitle() {
         testUtils.setupBook("book-name", "* - [ ] Checkbox");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onBook(0).perform(click());
         onNoteInBook(1, R.id.item_head_title).perform(clickClickableSpan("[ ]"));
@@ -683,7 +707,7 @@ public class MiscTest extends OrgzlyTest {
     @Test
     public void testActiveDrawerItemForSearchQuery() {
         testUtils.setupBook("booky-one", "* TODO Note 1\n* Note 2\n* Note 3\n* Note 4\n* TODO Note 5");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onBook(0).perform(click());
 

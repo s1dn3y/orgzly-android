@@ -5,10 +5,10 @@ import android.net.Uri;
 import android.util.Log;
 
 import com.orgzly.android.BookName;
+import com.orgzly.android.db.entity.Repo;
 import com.orgzly.android.git.GitFileSynchronizer;
 import com.orgzly.android.git.GitPreferences;
 import com.orgzly.android.git.GitPreferencesFromRepoPrefs;
-import com.orgzly.android.git.GitSSHKeyTransportSetter;
 import com.orgzly.android.git.GitTransportSetter;
 import com.orgzly.android.prefs.RepoPreferences;
 
@@ -32,33 +32,46 @@ import org.eclipse.jgit.util.FileUtils;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
 
 public class GitRepo implements SyncRepo, TwoWaySyncRepo {
-    public final static String SCHEME = "git";
+    private final long repoId;
 
-    public static GitTransportSetter getTransportSetter(GitPreferences preferences) {
-        return new GitSSHKeyTransportSetter(Uri.parse(preferences.sshKeyPathString()).getPath());
+    /**
+     * Used as cause when we try to clone into a non-empty directory
+     */
+    public static class DirectoryNotEmpty extends Exception {
+        public File dir;
+
+        DirectoryNotEmpty(File dir) {
+            this.dir = dir;
+        }
     }
 
-    public static GitRepo buildFromUri(Context context, Uri uri)
-            throws IOException, URISyntaxException {
-        GitPreferencesFromRepoPrefs prefs = new GitPreferencesFromRepoPrefs(
-                RepoPreferences.fromUri(context, uri));
-        return build(prefs, false);
+    public static GitRepo getInstance(RepoWithProps props, Context context) throws IOException {
+        // TODO: This doesn't seem to be implemented in the same way as WebdavRepo.kt, do
+        //  we want to store configuration data the same way they do?
+        Repo repo = props.getRepo();
+        Uri repoUri = Uri.parse(repo.getUrl());
+        RepoPreferences repoPreferences = new RepoPreferences(context, repo.getId(), repoUri);
+        GitPreferencesFromRepoPrefs prefs = new GitPreferencesFromRepoPrefs(repoPreferences);
+
+        // TODO: Build from info
+
+        return build(props.getRepo().getId(), prefs, false);
     }
 
-    private static GitRepo build(GitPreferences prefs, boolean clone) throws IOException {
+    private static GitRepo build(long id, GitPreferences prefs, boolean clone) throws IOException {
         Git git = ensureRepositoryExists(prefs, clone, null);
 
         StoredConfig config = git.getRepository().getConfig();
         config.setString("remote", prefs.remoteName(), "url", prefs.remoteUri().toString());
         config.save();
 
-        return new GitRepo(git, prefs);
+        return new GitRepo(id, git, prefs);
     }
 
     static boolean isRepo(FileRepositoryBuilder frb, File f) {
@@ -70,39 +83,33 @@ public class GitRepo implements SyncRepo, TwoWaySyncRepo {
             GitPreferences prefs, boolean clone, ProgressMonitor pm) throws IOException {
         return ensureRepositoryExists(
                 prefs.remoteUri(), new File(prefs.repositoryFilepath()),
-                getTransportSetter(prefs), clone, pm);
+                prefs.createTransportSetter(), clone, pm);
     }
 
     public static Git ensureRepositoryExists(
             Uri repoUri, File directoryFile, GitTransportSetter transportSetter,
             boolean clone, ProgressMonitor pm)
             throws IOException {
-        FileRepositoryBuilder frb = new FileRepositoryBuilder();
+        if (clone) {
+            return cloneRepo(repoUri, directoryFile, transportSetter, pm);
+        } else {
+            return verifyExistingRepo(directoryFile);
+        }
+    }
+
+    /**
+     * Check that the given path contains a valid git repository
+     * @param directoryFile the path to check
+     * @return A Git repo instance
+     * @throws IOException Thrown when either the directory doesnt exist or is not a git repository
+     */
+    private static Git verifyExistingRepo(File directoryFile) throws IOException {
         if (!directoryFile.exists()) {
-            if (clone) {
-                try {
-                    CloneCommand cloneCommand = Git.cloneRepository().
-                            setURI(repoUri.toString()).
-                            setProgressMonitor(pm).
-                            setDirectory(directoryFile);
-                    transportSetter.setTransport(cloneCommand);
-                    return cloneCommand.call();
-                } catch (GitAPIException | JGitInternalException e) {
-                    try {
-                        FileUtils.delete(directoryFile, FileUtils.RECURSIVE);
-                    } catch (IOException ex) {
-                        ex.printStackTrace();
-                    }
-                    e.printStackTrace();
-                    throw new IOException(
-                            String.format("Failed to clone repository %s, %s", repoUri.toString(),
-                                    e.getCause()));
-                }
-            } else {
-                throw new IOException(
-                        String.format("The file %s does not exist", directoryFile.toString()));
-            }
-        } else if (!isRepo(frb, directoryFile)) {
+            throw new IOException(String.format("The directory %s does not exist", directoryFile.toString()), new FileNotFoundException());
+        }
+
+        FileRepositoryBuilder frb = new FileRepositoryBuilder();
+        if (!isRepo(frb, directoryFile)) {
             throw new IOException(
                     String.format("Directory %s is not a git repository.",
                             directoryFile.getAbsolutePath()));
@@ -110,31 +117,79 @@ public class GitRepo implements SyncRepo, TwoWaySyncRepo {
         return new Git(frb.build());
     }
 
+    /**
+     * Attempts to clone a git repository
+     * @param repoUri Remote location of git repository
+     * @param directoryFile Location to clone to
+     * @param transportSetter Transport information
+     * @param pm Progress reporting helper
+     * @return A Git repo instance
+     * @throws IOException Thrown when directoryFile doesn't exist or isn't empty. Also thrown
+     * when the clone fails
+     */
+    private static Git cloneRepo(Uri repoUri, File directoryFile, GitTransportSetter transportSetter,
+                      ProgressMonitor pm) throws IOException {
+        if (!directoryFile.exists()) {
+            throw new IOException(String.format("The directory %s does not exist", directoryFile.toString()), new FileNotFoundException());
+        }
+
+        // Using list() can be resource intensive if there's many files, but since we just call it
+        // at the time of cloning once we should be fine for now
+        if (directoryFile.list().length != 0) {
+            throw new IOException(String.format("The directory must be empty"), new DirectoryNotEmpty(directoryFile));
+        }
+
+        try {
+            CloneCommand cloneCommand = Git.cloneRepository().
+                    setURI(repoUri.toString()).
+                    setProgressMonitor(pm).
+                    setDirectory(directoryFile);
+            transportSetter.setTransport(cloneCommand);
+            return cloneCommand.call();
+        } catch (GitAPIException | JGitInternalException e) {
+            try {
+                FileUtils.delete(directoryFile, FileUtils.RECURSIVE);
+                // This is done to show sensible error messages when trying to create a new git sync
+                directoryFile.mkdirs();
+            } catch (IOException ex) {
+                ex.printStackTrace();
+            }
+            e.printStackTrace();
+            throw new IOException(
+                    String.format("Failed to clone repository %s, %s", repoUri.toString(),
+                            e.getCause().getMessage()), e.getCause());
+        }
+    }
+
     private Git git;
     private GitFileSynchronizer synchronizer;
     private GitPreferences preferences;
 
-    public GitRepo(Git g, GitPreferences prefs) {
+    public GitRepo(long id, Git g, GitPreferences prefs) {
+        repoId = id;
         git = g;
         preferences = prefs;
         synchronizer = new GitFileSynchronizer(git, prefs);
     }
 
-    public boolean requiresConnection() {
-        return false;
+    public boolean isConnectionRequired() {
+        return true;
+    }
+
+    @Override
+    public boolean isAutoSyncSupported() {
+        return true;
     }
 
     public VersionedRook storeBook(File file, String fileName) throws IOException {
-        // FIXME: Removed current_versioned_rooks table, just get the list from remote
-//        VersionedRook current = CurrentRooksClient.get(
-//                // TODO: get rid of "/" prefix needed here
-//                App.getAppContext(), getUri().toString(), "/" + fileName);
-        VersionedRook current = null;
-
-        RevCommit commit = getCommitFromRevisionString(current.getRevision());
-        synchronizer.updateAndCommitFileFromRevision(
-                file, fileName, synchronizer.getFileRevision(fileName, commit));
-        synchronizer.tryPushIfUpdated(commit);
+        // If the file already exists it is because we're trying to force save a file
+        File destination = synchronizer.repoDirectoryFile(fileName);
+        if (destination.exists()) {
+            synchronizer.updateAndCommitExistingFile(file, fileName);
+        } else {
+            synchronizer.addAndCommitNewFile(file, fileName);
+        }
+        synchronizer.tryPush();
         return currentVersionedRook(Uri.EMPTY.buildUpon().appendPath(fileName).build());
     }
 
@@ -164,6 +219,12 @@ public class GitRepo implements SyncRepo, TwoWaySyncRepo {
 
         // TODO: consider
         // synchronizer.checkoutSelected();
+        try {
+            currentCommit = synchronizer.getLatestCommitOfFile(Uri.parse(fileName));
+        } catch (GitAPIException ex) {
+            throw new IOException("Error while retrieving latest commit of " + fileName, ex);
+        }
+        // TODO: What if we  can't merge here? Can that not happen?
         synchronizer.mergeWithRemote();
         synchronizer.tryPushIfUpdated(currentCommit);
         synchronizer.safelyRetrieveLatestVersionOfFile(
@@ -173,8 +234,17 @@ public class GitRepo implements SyncRepo, TwoWaySyncRepo {
     }
 
     private VersionedRook currentVersionedRook(Uri uri) throws IOException {
-        RevCommit newCommit = synchronizer.currentHead();
-        return new VersionedRook(getUri(), uri, newCommit.name(), newCommit.getCommitTime()*1000);
+        RevCommit commit = null;
+        if (uri.toString().contains("%")) {
+            uri = Uri.parse(Uri.decode(uri.toString()));
+        }
+        try {
+            commit = synchronizer.getLatestCommitOfFile(uri);
+        } catch (GitAPIException e) {
+            e.printStackTrace();
+        }
+        long mtime = (long)commit.getCommitTime()*1000;
+        return new VersionedRook(repoId, RepoType.GIT, getUri(), uri, commit.name(), mtime);
     }
 
     private IgnoreNode getIgnores() throws IOException {
@@ -194,6 +264,10 @@ public class GitRepo implements SyncRepo, TwoWaySyncRepo {
     public List<VersionedRook> getBooks() throws IOException {
         synchronizer.setBranchAndGetLatest();
         List<VersionedRook> result = new ArrayList<>();
+        if (synchronizer.currentHead() == null) {
+            return result;
+        }
+
         TreeWalk walk = new TreeWalk(git.getRepository());
         walk.reset();
         walk.setRecursive(true);
@@ -250,19 +324,25 @@ public class GitRepo implements SyncRepo, TwoWaySyncRepo {
     public TwoWaySyncResult syncBook(
             Uri uri, VersionedRook current, File fromDB) throws IOException {
         File writeBack = null;
+        boolean onMainBranch = true;
         String fileName = uri.getPath();
         if (fileName.startsWith("/"))
             fileName = fileName.replaceFirst("/", "");
-        boolean syncBackNeeded = false;
+        boolean syncBackNeeded;
         if (current != null) {
             RevCommit rookCommit = getCommitFromRevisionString(current.getRevision());
             Log.i("Git", String.format("File name %s, rookCommit: %s", fileName, rookCommit));
-            synchronizer.updateAndCommitFileFromRevisionAndMerge(
+            boolean merged = synchronizer.updateAndCommitFileFromRevisionAndMerge(
                     fromDB, fileName,
                     synchronizer.getFileRevision(fileName, rookCommit),
                     rookCommit);
 
-            synchronizer.tryPushIfUpdated(rookCommit);
+            // We have attempted a merge. Are we back on the main branch, or still on a temp branch?
+            onMainBranch = git.getRepository().getBranch().equals(preferences.branchName());
+
+            if (merged && !onMainBranch) {
+                onMainBranch = synchronizer.attemptReturnToMainBranch();
+            }
 
             syncBackNeeded = !synchronizer.fileMatchesInRevisions(
                     fileName, rookCommit, synchronizer.currentHead());
@@ -276,7 +356,11 @@ public class GitRepo implements SyncRepo, TwoWaySyncRepo {
             writeBack = synchronizer.repoDirectoryFile(fileName);
         }
         return new TwoWaySyncResult(
-                currentVersionedRook(Uri.EMPTY.buildUpon().appendPath(fileName).build()),
+                currentVersionedRook(Uri.EMPTY.buildUpon().appendPath(fileName).build()), onMainBranch,
                 writeBack);
+    }
+
+    public void tryPushIfHeadDiffersFromRemote() {
+        synchronizer.tryPushIfHeadDiffersFromRemote();
     }
 }

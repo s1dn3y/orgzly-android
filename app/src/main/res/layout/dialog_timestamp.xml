@@ -1,117 +1,218 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<ScrollView
+<layout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:layout_gravity="center">
+    xmlns:tools="http://schemas.android.com/tools">
 
-    <androidx.constraintlayout.widget.ConstraintLayout
+    <data>
+        <variable name="viewModel" type="com.orgzly.android.ui.dialogs.TimestampDialogViewModel" />
+    </data>
+
+    <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center"
-        android:padding="16dp">
+        android:layout_height="match_parent">
 
-        <Button
-            android:id="@+id/dialog_timestamp_date_picker"
-            style="@style/TimestampDialogButton.Common"
-            android:layout_marginTop="8dp"
-            app:layout_constraintEnd_toEndOf="@+id/dialog_timestamp_next_week_shortcut"
-            app:layout_constraintStart_toStartOf="@+id/dialog_timestamp_today_shortcut"
-            app:layout_constraintTop_toBottomOf="@+id/dialog_timestamp_today_shortcut"
-            tools:text="@string/dialog_timestamp_date_sample"/>
-
-        <Button
-            android:id="@+id/dialog_timestamp_time_picker"
-            style="@style/TimestampDialogButton.Common"
-            android:layout_marginTop="8dp"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/dialog_timestamp_date_picker"
-            tools:text="@string/dialog_timestamp_time_sample"/>
-
-        <Button
-            android:id="@+id/dialog_timestamp_repeater_picker"
-            style="@style/TimestampDialogButton.Common"
-            android:layout_marginTop="8dp"
-            app:layout_constraintStart_toStartOf="@+id/dialog_timestamp_time_picker"
-            app:layout_constraintTop_toBottomOf="@+id/dialog_timestamp_time_picker"
-            android:text="@string/dialog_timestamp_repeater_default"/>
-
-        <ImageView
-            android:id="@+id/dialog_timestamp_time_icon"
-            android:layout_width="wrap_content"
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginEnd="16dp"
-            android:layout_marginRight="16dp"
-            android:src="?attr/ic_access_time_24dp"
-            android:contentDescription="@string/time"
-            app:layout_constraintBottom_toBottomOf="@+id/dialog_timestamp_time_picker"
-            app:layout_constraintEnd_toStartOf="@+id/dialog_timestamp_time_picker"
-            app:layout_constraintTop_toTopOf="@+id/dialog_timestamp_time_picker"/>
+            android:padding="@dimen/screen_edge">
 
-        <ImageView
-            android:id="@+id/dialog_timestamp_repeater_icon"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:src="?attr/ic_repeat_24dp"
-            android:contentDescription="@string/repeater"
-            app:layout_constraintBottom_toBottomOf="@+id/dialog_timestamp_repeater_picker"
-            app:layout_constraintEnd_toEndOf="@+id/dialog_timestamp_time_icon"
-            app:layout_constraintStart_toStartOf="@+id/dialog_timestamp_time_icon"
-            app:layout_constraintTop_toTopOf="@+id/dialog_timestamp_repeater_picker"/>
+            <androidx.constraintlayout.widget.Guideline
+                android:id="@+id/guideline"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                app:layout_constraintGuide_percent="0.5" />
 
-        <CheckBox
-            android:id="@+id/dialog_timestamp_time_check"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
-            android:layout_marginLeft="16dp"
-            android:checked="true"
-            app:layout_constraintBottom_toBottomOf="@+id/dialog_timestamp_time_picker"
-            app:layout_constraintStart_toEndOf="@+id/dialog_timestamp_time_picker"
-            app:layout_constraintTop_toTopOf="@+id/dialog_timestamp_time_picker"/>
+            <!-- Date label -->
+            <TextView
+                android:id="@+id/date_picker_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:layout_marginLeft="6dp"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                android:textSize="?attr/font_micro"
+                android:textAllCaps="true"
+                android:text="@string/timestamp_dialog_day"/>
 
-        <CheckBox
-            android:id="@+id/dialog_timestamp_repeater_check"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:checked="false"
-            app:layout_constraintBottom_toBottomOf="@+id/dialog_timestamp_repeater_picker"
-            app:layout_constraintEnd_toEndOf="@+id/dialog_timestamp_time_check"
-            app:layout_constraintStart_toStartOf="@+id/dialog_timestamp_time_check"
-            app:layout_constraintTop_toTopOf="@+id/dialog_timestamp_repeater_picker"/>
+            <!-- Date -->
+            <Button
+                android:id="@+id/date_picker_button"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                app:layout_constraintTop_toBottomOf="@+id/date_picker_label"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                tools:text="@string/dialog_timestamp_date_sample" />
 
+            <!-- Time label -->
+            <TextView
+                android:id="@+id/time_picker_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                app:layout_constraintTop_toBottomOf="@+id/tomorrow_button"
+                app:layout_constraintStart_toStartOf="@+id/date_picker_label"
+                android:textSize="?attr/font_micro"
+                android:textAllCaps="true"
+                android:text="@string/timestamp_dialog_time"/>
 
-        <ImageButton
-            android:id="@+id/dialog_timestamp_today_shortcut"
-            style="@style/TimestampDialogShortcutButton.Common"
-            android:contentDescription="@string/today"
-            android:src="?attr/oic_today_36dp"
-            app:layout_constraintBottom_toBottomOf="@+id/dialog_timestamp_tomorrow_shortcut"
-            app:layout_constraintEnd_toStartOf="@+id/dialog_timestamp_tomorrow_shortcut"
-            app:layout_constraintTop_toTopOf="@+id/dialog_timestamp_tomorrow_shortcut"/>
+            <!-- Time -->
+            <Button
+                android:id="@+id/time_picker_button"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                app:layout_constraintTop_toBottomOf="@+id/time_picker_label"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toStartOf="@+id/time_used_checkbox"
+                tools:text="@string/dialog_timestamp_time_sample" />
 
-        <ImageButton
-            android:id="@+id/dialog_timestamp_tomorrow_shortcut"
-            style="@style/TimestampDialogShortcutButton.Common"
-            android:contentDescription="@string/tomorrow"
-            android:src="?attr/oic_tomorrow_36dp"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent"/>
+            <CheckBox
+                android:id="@+id/time_used_checkbox"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:layout_constraintBottom_toBottomOf="@+id/time_picker_button"
+                app:layout_constraintEnd_toStartOf="@+id/guideline"
+                app:layout_constraintTop_toTopOf="@+id/time_picker_button" />
 
-        <ImageButton
-            android:id="@+id/dialog_timestamp_next_week_shortcut"
-            style="@style/TimestampDialogShortcutButton.Common"
-            android:contentDescription="@string/next_week"
-            android:src="?attr/oic_next_week_36dp"
-            app:layout_constraintBottom_toBottomOf="@+id/dialog_timestamp_tomorrow_shortcut"
-            app:layout_constraintStart_toEndOf="@+id/dialog_timestamp_tomorrow_shortcut"
-            app:layout_constraintTop_toTopOf="@+id/dialog_timestamp_tomorrow_shortcut"/>
+            <!-- End time label -->
+            <TextView
+                android:id="@+id/end_time_picker_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:layout_marginLeft="6dp"
+                app:layout_constraintTop_toTopOf="@+id/time_picker_label"
+                app:layout_constraintBottom_toBottomOf="@+id/time_picker_label"
+                app:layout_constraintStart_toStartOf="@+id/guideline"
+                android:textSize="?attr/font_micro"
+                android:textAllCaps="true"
+                android:text="@string/timestamp_dialog_end_time"/>
 
-    </androidx.constraintlayout.widget.ConstraintLayout>
+            <!-- End time -->
+            <Button
+                android:id="@+id/end_time_picker_button"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                app:layout_constraintBottom_toBottomOf="@+id/time_picker_button"
+                app:layout_constraintEnd_toStartOf="@+id/end_time_used_checkbox"
+                app:layout_constraintStart_toStartOf="@+id/guideline"
+                app:layout_constraintTop_toTopOf="@+id/time_picker_button"
+                tools:text="@string/dialog_timestamp_time_sample" />
 
-</ScrollView>
+            <CheckBox
+                android:id="@+id/end_time_used_checkbox"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:layout_constraintBottom_toBottomOf="@+id/end_time_picker_button"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toTopOf="@+id/end_time_picker_button" />
+
+            <!-- Repeater label -->
+            <TextView
+                android:id="@+id/repeater_picker_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                app:layout_constraintTop_toBottomOf="@+id/time_picker_button"
+                app:layout_constraintStart_toStartOf="@+id/time_picker_label"
+                android:textSize="?attr/font_micro"
+                android:textAllCaps="true"
+                android:text="@string/timestamp_dialog_repeater"/>
+
+            <!-- Repeater -->
+            <Button
+                android:id="@+id/repeater_picker_button"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:minWidth="0dp"
+                app:layout_constraintTop_toBottomOf="@+id/repeater_picker_label"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toStartOf="@+id/repeater_used_checkbox"
+                tools:text="@string/dialog_timestamp_repeater_sample" />
+
+            <CheckBox
+                android:id="@+id/repeater_used_checkbox"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:visibility="visible"
+                app:layout_constraintBottom_toBottomOf="@+id/repeater_picker_button"
+                app:layout_constraintEnd_toStartOf="@+id/guideline"
+                app:layout_constraintTop_toTopOf="@+id/repeater_picker_button"
+                tools:checked="true" />
+
+            <!-- Delay or warning period label -->
+            <TextView
+                android:id="@+id/delay_picker_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                app:layout_constraintTop_toBottomOf="@+id/repeater_picker_button"
+                app:layout_constraintStart_toStartOf="@+id/time_picker_label"
+                android:textSize="?attr/font_micro"
+                android:textAllCaps="true"
+                android:text="@string/timestamp_dialog_delay"/>
+
+            <!-- Delay -->
+            <Button
+                android:id="@+id/delay_picker_button"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:minWidth="0dp"
+                app:layout_constraintTop_toBottomOf="@+id/delay_picker_label"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toStartOf="@+id/delay_used_checkbox"
+                tools:text="@string/dialog_timestamp_delay_sample" />
+
+            <CheckBox
+                android:id="@+id/delay_used_checkbox"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:visibility="visible"
+                app:layout_constraintBottom_toBottomOf="@+id/delay_picker_button"
+                app:layout_constraintEnd_toStartOf="@+id/guideline"
+                app:layout_constraintTop_toTopOf="@+id/delay_picker_button" />
+
+            <!-- Shortcuts -->
+
+            <Button
+                android:id="@+id/today_button"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:text="@string/today"
+                android:singleLine="true"
+                app:layout_constraintBottom_toBottomOf="@+id/tomorrow_button"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toStartOf="@id/tomorrow_button"
+                app:layout_constraintTop_toBottomOf="@id/date_picker_button" />
+
+            <Button
+                android:id="@+id/tomorrow_button"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:text="@string/tomorrow"
+                android:singleLine="true"
+                app:layout_constraintStart_toEndOf="@+id/today_button"
+                app:layout_constraintEnd_toStartOf="@+id/next_week_button"
+                app:layout_constraintTop_toBottomOf="@id/date_picker_button" />
+
+            <Button
+                android:id="@+id/next_week_button"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:text="@string/next_week"
+                android:singleLine="true"
+                app:layout_constraintBottom_toBottomOf="@+id/tomorrow_button"
+                app:layout_constraintStart_toEndOf="@id/tomorrow_button"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/date_picker_button"
+                app:layout_constraintVertical_bias="0.0" />
+
+        </androidx.constraintlayout.widget.ConstraintLayout>
+
+    </ScrollView>
+
+</layout>

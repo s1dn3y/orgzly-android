@@ -6,8 +6,8 @@ import android.content.Intent
 import android.content.res.Resources
 import android.media.MediaScannerConnection
 import android.net.Uri
+import android.os.Handler
 import android.text.TextUtils
-import android.util.Log
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.Transformations
@@ -18,8 +18,8 @@ import com.orgzly.BuildConfig
 import com.orgzly.R
 import com.orgzly.android.*
 import com.orgzly.android.data.mappers.OrgMapper
-import com.orgzly.android.db.OrgzlyDatabase
 import com.orgzly.android.db.NotesClipboard
+import com.orgzly.android.db.OrgzlyDatabase
 import com.orgzly.android.db.dao.NoteDao
 import com.orgzly.android.db.dao.NoteViewDao
 import com.orgzly.android.db.dao.ReminderTimeDao
@@ -29,9 +29,8 @@ import com.orgzly.android.prefs.AppPreferences
 import com.orgzly.android.query.Query
 import com.orgzly.android.query.sql.SqliteQueryBuilder
 import com.orgzly.android.query.user.InternalQueryParser
-import com.orgzly.android.repos.RepoFactory
+import com.orgzly.android.repos.*
 import com.orgzly.android.repos.Rook
-import com.orgzly.android.repos.SyncRepo
 import com.orgzly.android.repos.VersionedRook
 import com.orgzly.android.savedsearch.FileSavedSearchStore
 import com.orgzly.android.sync.BookSyncStatus
@@ -41,17 +40,26 @@ import com.orgzly.android.ui.note.NoteBuilder
 import com.orgzly.android.ui.note.NotePayload
 import com.orgzly.android.usecase.RepoCreate
 import com.orgzly.android.util.*
-import com.orgzly.org.*
+import com.orgzly.org.OrgActiveTimestamps
+import com.orgzly.org.OrgFile
+import com.orgzly.org.OrgFileSettings
+import com.orgzly.org.OrgProperties
 import com.orgzly.org.datetime.OrgDateTime
 import com.orgzly.org.datetime.OrgRange
-import com.orgzly.org.parser.*
+import com.orgzly.org.parser.OrgNestedSetParserListener
+import com.orgzly.org.parser.OrgNodeInSet
+import com.orgzly.org.parser.OrgParser
+import com.orgzly.org.parser.OrgParserWriter
 import com.orgzly.org.utils.StateChangeLogic
 import java.io.*
+import java.lang.IllegalStateException
 import java.util.*
 import java.util.concurrent.Callable
 import javax.inject.Inject
+import javax.inject.Singleton
 
 // TODO: Split
+@Singleton
 class DataRepository @Inject constructor(
         private val context: Context,
         private val db: OrgzlyDatabase,
@@ -64,17 +72,17 @@ class DataRepository @Inject constructor(
                 ?: throw IOException(resources.getString(R.string.book_does_not_exist_anymore))
 
         try {
-            if (book.linkedTo == null) {
+            if (book.linkRepo == null) {
                 throw IOException(resources.getString(R.string.message_book_has_no_link))
             }
 
             setBookLastActionAndSyncStatus(bookId, BookAction.forNow(
                     BookAction.Type.PROGRESS,
-                    resources.getString(R.string.force_loading_from_uri, book.linkedTo)))
+                    resources.getString(R.string.force_loading_from_uri, book.linkRepo.url)))
 
             val fileName = BookName.getFileName(context, book)
 
-            val loadedBook = loadBookFromRepo(Uri.parse(book.linkedTo), fileName)
+            val loadedBook = loadBookFromRepo(book.linkRepo.id, book.linkRepo.type, book.linkRepo.url, fileName)
 
             setBookLastActionAndSyncStatus(loadedBook!!.book.id, BookAction.forNow(
                     BookAction.Type.INFO,
@@ -99,13 +107,13 @@ class DataRepository @Inject constructor(
 
         try {
             /* Prefer link. */
-            val repoUrl = book.linkedTo ?: repoForSavingBook()
+            val repoEntity = book.linkRepo ?: defaultRepoForSavingBook()
 
             setBookLastActionAndSyncStatus(book.book.id, BookAction.forNow(
                     BookAction.Type.PROGRESS,
-                    resources.getString(R.string.force_saving_to_uri, repoUrl)))
+                    resources.getString(R.string.force_saving_to_uri, repoEntity)))
 
-            saveBookToRepo(repoUrl, fileName, book, BookFormat.ORG)
+            saveBookToRepo(repoEntity, fileName, book, BookFormat.ORG)
 
             val savedBook = getBookView(bookId)
 
@@ -134,16 +142,20 @@ class DataRepository @Inject constructor(
      * @throws IOException
      */
     @Throws(IOException::class)
-    fun saveBookToRepo(repoUrl: String, fileName: String, bookView: BookView, format: BookFormat) {
+    fun saveBookToRepo(
+            repoEntity: Repo,
+            fileName: String,
+            bookView: BookView,
+            @Suppress("UNUSED_PARAMETER") format: BookFormat) {
 
         val uploadedBook: VersionedRook
 
-        val repo = getRepo(Uri.parse(repoUrl))
+        val repo = getRepoInstance(repoEntity.id, repoEntity.type, repoEntity.url)
 
         val tmpFile = getTempBookFile()
         try {
             /* Write to temporary file. */
-            NotesOrgExporter(context, this).exportBook(bookView.book, tmpFile)
+            NotesOrgExporter(this).exportBook(bookView.book, tmpFile)
 
             /* Upload to repo. */
             uploadedBook = repo.storeBook(tmpFile, fileName)
@@ -164,24 +176,16 @@ class DataRepository @Inject constructor(
         return localStorage.getTempBookFile()
     }
 
-    @Throws(IOException::class)
-    fun getRepo(repoUrl: Uri): SyncRepo {
-        return repoFactory.getFromUri(context, repoUrl)
-                ?: throw IOException("Unsupported repository URL \"$repoUrl\"")
-    }
-
     /*
      * If there is only one repository, return its URL.
      * If there are more, we don't know which one to use, so throw exception.
      */
     @Throws(IOException::class)
-    private fun repoForSavingBook(): String {
+    private fun defaultRepoForSavingBook(): Repo {
         val repos = getRepos()
 
-        /* Use repository if there is only one. */
-
         return when {
-            repos.size == 1 -> repos.keys.iterator().next()
+            repos.size == 1 -> repos.first()
             repos.isEmpty() -> throw IOException(resources.getString(R.string.no_repos))
             else -> throw IOException(resources.getString(R.string.multiple_repos))
         }
@@ -240,6 +244,10 @@ class DataRepository @Inject constructor(
         return db.book().get(id)
     }
 
+    fun getBookOrThrow(id: Long): Book {
+        return db.book().get(id) ?: throw IllegalStateException("Book with ID $id not found")
+    }
+
     fun getBookLiveData(id: Long): LiveData<Book> {
         if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, id)
         return db.book().getLiveData(id)
@@ -249,13 +257,13 @@ class DataRepository @Inject constructor(
      * Returns full string content of the book in format specified. Used by tests.
      */
     @Throws(IOException::class)
-    fun getBookContent(name: String, format: BookFormat): String? {
+    fun getBookContent(name: String, @Suppress("UNUSED_PARAMETER") format: BookFormat): String? {
         val book = getBook(name)
 
         if (book != null) {
             val file = getTempBookFile()
             try {
-                NotesOrgExporter(context, this).exportBook(book, file)
+                NotesOrgExporter(this).exportBook(book, file)
                 return MiscUtils.readStringFromFile(file)
             } finally {
                 file.delete()
@@ -315,8 +323,11 @@ class DataRepository @Inject constructor(
 
     fun deleteBook(book: BookView, deleteLinked: Boolean) {
         if (deleteLinked) {
-            val repo = repoFactory.getFromUri(context, book.syncedTo?.repoUri)
-            repo?.delete(book.syncedTo?.uri)
+            book.syncedTo?.let { vrook ->
+                val repo = getRepoInstance(vrook.repoId, vrook.repoType, vrook.repoUri.toString())
+
+                repo.delete(vrook.uri)
+            }
         }
 
         db.book().delete(book.book)
@@ -352,8 +363,8 @@ class DataRepository @Inject constructor(
         }
 
         /* Make sure link's repo is the same as sync book repo. */
-        if (bookView.hasLink() && bookView.syncedTo != null) {
-            if (!TextUtils.equals(bookView.linkedTo, bookView.syncedTo.repoUri.toString())) {
+        if (bookView.linkRepo != null && bookView.syncedTo != null) {
+            if (!TextUtils.equals(bookView.linkRepo.url, bookView.syncedTo.repoUri.toString())) {
                 val s = BookSyncStatus.ROOK_AND_VROOK_HAVE_DIFFERENT_REPOS.toString()
                 setBookLastActionAndSyncStatus(book.id, BookAction.forNow(BookAction.Type.ERROR, s), s)
                 return
@@ -366,9 +377,8 @@ class DataRepository @Inject constructor(
         }
 
         /* Prefer link. */
-        if (bookView.syncedTo != null) {
-            val vrook = bookView.syncedTo
-            val repo = repoFactory.getFromUri(context, vrook.repoUri)
+        bookView.syncedTo?.let { vrook ->
+            val repo = getRepoInstance(vrook.repoId, vrook.repoType, vrook.repoUri.toString())
 
             val movedVrook = repo.renameBook(vrook.uri, name)
 
@@ -409,27 +419,27 @@ class DataRepository @Inject constructor(
     }
 
     fun updateBookLinkAndSync(bookId: Long, uploadedBook: VersionedRook) {
-        val repoUrl = uploadedBook.repoUri.toString()
         val rookUrl = uploadedBook.uri.toString()
+        val repoId = uploadedBook.repoId
         val rookRevision = uploadedBook.revision
         val rookMtime = uploadedBook.mtime
 
-        val repoId = db.repo().getOrInsert(repoUrl)
         val rookUrlId = db.rookUrl().getOrInsert(rookUrl)
         val rookId = db.rook().getOrInsert(repoId, rookUrlId)
 
         val versionedRookId = db.versionedRook().replace(
-                VersionedRook(0, rookId, rookRevision, rookMtime))
+                com.orgzly.android.db.entity.VersionedRook(
+                        0, rookId, rookRevision, rookMtime))
 
         db.bookLink().upsert(bookId, repoId)
         db.bookSync().upsert(bookId, versionedRookId)
     }
 
     private fun updateBookIsModified(bookId: Long, isModified: Boolean, time: Long = System.currentTimeMillis()) {
-        updateBookIsModified(listOf(bookId), isModified, time)
+        updateBookIsModified(setOf(bookId), isModified, time)
     }
 
-    private fun updateBookIsModified(bookIds: List<Long>, isModified: Boolean, time: Long = System.currentTimeMillis()) {
+    private fun updateBookIsModified(bookIds: Set<Long>, isModified: Boolean, time: Long = System.currentTimeMillis()) {
         if (bookIds.isNotEmpty()) {
             if (isModified) {
                 db.book().setIsModified(bookIds, time)
@@ -464,16 +474,19 @@ class DataRepository @Inject constructor(
         return db.note().getRootNode(bookId)
     }
 
-    fun setLink(bookId: Long, repoUrl: String?) {
-        if (repoUrl == null) {
+    fun setLink(bookId: Long, repo: Repo?) {
+        if (repo == null) {
             deleteBookLink(bookId)
         } else {
-            setBookLink(bookId, repoUrl)
+            setBookLink(bookId, repo)
         }
     }
 
-    private fun setBookLink(bookId: Long, repoUrl: String) {
-        val repoId = db.repo().getOrInsert(repoUrl)
+    private fun setBookLink(bookId: Long, repo: Repo) {
+        val repoId = checkNotNull(db.repo().get(repo.url)) {
+            "Repo ${repo.url} not found"
+        }.id
+
         db.bookLink().upsert(bookId, repoId)
     }
 
@@ -536,13 +549,14 @@ class DataRepository @Inject constructor(
         return db.runInTransaction(Callable {
             val note = db.note().getFirst(ids) ?: return@Callable 0
 
-            val previousSibling =
-                    db.note().getPreviousSibling(note.position.bookId, note.position.lft, note.position.parentId)
-                            ?: return@Callable 0
+            val previousSibling = db.note().getPreviousSibling(
+                    note.position.bookId, note.position.lft, note.position.parentId)
 
-            if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, "Previous sibling ${previousSibling.title}")
-
-            return@Callable moveSubtrees(ids, Place.UNDER, previousSibling.id)
+            if (previousSibling != null) {
+                return@Callable moveSubtrees(ids, Place.UNDER, previousSibling.id)
+            } else {
+                return@Callable 0
+            }
         })
     }
 
@@ -590,20 +604,26 @@ class DataRepository @Inject constructor(
         }
     }
 
-    fun pasteNotes(clipboard: NotesClipboard, noteId: Long, place: Place): Int {
+    fun pasteNotes(clipboard: NotesClipboard, bookId: Long, noteId: Long, place: Place): Int {
         return db.runInTransaction(Callable {
-            pasteNotesClipboard(clipboard, place, noteId)
+            pasteNotesClipboard(clipboard, bookId, place, noteId)
         })
     }
 
     private fun pasteNotesClipboard(
             clipboard: NotesClipboard,
+            bookId: Long,
             place: Place,
             targetNoteId: Long): Int {
 
         val pastedNoteIds = mutableSetOf<Long>()
 
-        val targetNote = db.note().get(targetNoteId) ?: return 0
+        // Empty book, use root node
+        val targetNote = if (targetNoteId == 0L) {
+            db.note().getRootNode(bookId)
+        } else {
+            db.note().get(targetNoteId)
+        } ?: return 0
 
         val targetPosition = TargetPosition.getInstance(db, targetNote, place)
 
@@ -656,7 +676,7 @@ class DataRepository @Inject constructor(
                             lft = lft,
                             rgt = rgt,
                             level = level,
-                            parentId = parentIds.peekLast(),
+                            parentId = parentIds.peekLast() ?: 0,
                             foldedUnderId = foldedUnderId
                     )
             )
@@ -684,34 +704,112 @@ class DataRepository @Inject constructor(
         // Update descendants count for the target note and its ancestors
         db.note().updateDescendantsCountForNoteAndAncestors(listOf(targetNote.id))
 
+        unfoldTargetIfMovingUnder(place, targetNote.id)
+
         updateBookIsModified(targetNote.position.bookId, true)
 
         return pastedNoteIds.size
     }
 
+    data class NoteWithPosition(val note: Note, val level: Int, val lft: Long, val rgt: Long)
+
     fun getSubtreesAligned(ids: Set<Long>): List<Note> {
-        var offset = 0L
         var subtreeRgt = 0L
         var levelOffset = 0
 
-        return db.note().getNotesForSubtrees(ids).map { note ->
+        var sequence = 0L
+        var prevLevel = 0
+
+        val stack = Stack<NoteWithPosition>()
+
+        val notesPerLft = TreeMap<Long, Note>()
+
+        fun output(note: Note, level: Int, lft: Long, rgt: Long) {
+            notesPerLft[lft] = note.copy(
+                    position = note.position.copy(level = level, lft = lft, rgt = rgt))
+        }
+
+        var notes = 0
+
+        db.note().getNotesForSubtrees(ids).forEach { note ->
+            notes++
+
             // First note or next subtree
             if (subtreeRgt == 0L || note.position.rgt > subtreeRgt) {
-                offset += note.position.lft - subtreeRgt - 1
-                levelOffset = note.position.level - 1
                 subtreeRgt = note.position.rgt
+                levelOffset = note.position.level - 1
+
+                while (!stack.empty()) {
+                    val popped = stack.pop()
+
+                    sequence++
+
+                    output(popped.note, popped.level, popped.lft, sequence)
+                }
+
+                prevLevel = 0
             }
 
             val level = note.position.level - levelOffset
-            val lft = note.position.lft - offset
-            val rgt = note.position.rgt - offset
 
-            note.copy(
-                    position = note.position.copy(
-                            level = level,
-                            lft = lft,
-                            rgt = rgt))
+            if (prevLevel < level) {
+                sequence++
+
+                val lft = sequence
+                val rgt = 0L // Unknown yet
+
+                stack.push(NoteWithPosition(note, level, lft, rgt))
+
+            } else if (prevLevel == level) {
+                sequence++
+
+                val popped = stack.pop()
+
+                output(popped.note, popped.level, popped.lft, sequence)
+
+                sequence++
+
+                val lft = sequence
+                val rgt = 0L // Unknown yet
+
+                stack.push(NoteWithPosition(note, level, lft, rgt))
+
+            } else {
+                while (!stack.empty()) {
+                    val popped = stack.peek()
+
+                    if (popped.level >= level) {
+                        stack.pop()
+
+                        sequence++
+
+                        output(popped.note, popped.level, popped.lft, sequence)
+
+                    } else {
+                        break
+                    }
+                }
+
+                sequence++
+
+                val lft = sequence
+                val rgt = 0L // Unknown yet
+
+                stack.push(NoteWithPosition(note, level, lft, rgt))
+            }
+
+            prevLevel = level
         }
+
+        while (!stack.empty()) {
+            val popped = stack.pop()
+
+            sequence++
+
+            output(popped.note, popped.level, popped.lft, sequence)
+        }
+
+        return notesPerLft.values.toList()
     }
 
     private fun moveSubtrees(selectedIds: Set<Long>, place: Place, targetNoteId: Long): Int {
@@ -730,7 +828,7 @@ class DataRepository @Inject constructor(
 
 
         val ids = mutableSetOf<Long>()
-        val sourceBookIds = mutableListOf<Long>()
+        val sourceBookIds = mutableSetOf<Long>()
 
         // Update notes
         alignedNotes.map { note ->
@@ -765,12 +863,21 @@ class DataRepository @Inject constructor(
         // Update descendants count for the note and its ancestors
         db.note().updateDescendantsCountForNoteAndAncestors(listOf(targetNote.id))
 
+        unfoldTargetIfMovingUnder(place, targetNoteId)
+
         System.currentTimeMillis().let {
             updateBookIsModified(sourceBookIds, true, it)
             updateBookIsModified(targetNote.position.bookId, true, it)
         }
 
         return alignedNotes.size
+    }
+
+    /** Unfold target note and its ancestors if subtree is moved under it. */
+    private fun unfoldTargetIfMovingUnder(place: Place, targetNoteId: Long) {
+        if (place == Place.UNDER || place == Place.UNDER_AS_FIRST) {
+            unfoldForNote(targetNoteId)
+        }
     }
 
     data class TargetPosition(
@@ -854,7 +961,7 @@ class DataRepository @Inject constructor(
 
         db.note().updateScheduledTime(noteIds, timeId)
 
-        db.note().get(noteIds).map { it.position.bookId }.let {
+        db.note().get(noteIds).mapTo(hashSetOf()) { it.position.bookId }.let {
             updateBookIsModified(it, true)
         }
     }
@@ -864,7 +971,7 @@ class DataRepository @Inject constructor(
 
         db.note().updateDeadlineTime(noteIds, timeId)
 
-        db.note().get(noteIds).map { it.position.bookId }.let {
+        db.note().get(noteIds).mapTo(hashSetOf()) { it.position.bookId }.let {
             updateBookIsModified(it, true)
         }
     }
@@ -883,6 +990,20 @@ class DataRepository @Inject constructor(
 
             return@Callable toggled
         })
+    }
+
+    fun toggleNoteFoldedStateForSubtree(noteId: Long) {
+        db.runInTransaction {
+            db.note().get(noteId)?.let { note ->
+                val foldedCount = db.note().getSubtreeFoldedNoteCount(listOf(noteId))
+
+                if (foldedCount == 0) { // All notes unfolded
+                    db.note().foldSubtrees(listOf(note.id))
+                } else {
+                    db.note().unfoldSubtrees(listOf(noteId))
+                }
+            }
+        }
     }
 
     fun setNoteStateToDone(noteId: Long): Int {
@@ -916,7 +1037,7 @@ class DataRepository @Inject constructor(
              * Notebooks must be updated before notes,
              * because this query checks for notes what will be affected.
              */
-            updateBookIsModified(db.note().getBookIdsForNotesNotMatchingState(noteIds, state), true)
+            updateBookIsModified(db.note().getBookIdsForNotesNotMatchingState(noteIds, state).toSet(), true)
 
             return@Callable if (AppPreferences.isDoneKeyword(context, state)) {
                 var updated = 0
@@ -1017,7 +1138,7 @@ class DataRepository @Inject constructor(
         }
 
         if (query.options.agendaDays > 0) {
-            s.add("(scheduled_range_id IS NOT NULL OR deadline_range_id IS NOT NULL OR event_timestamp IS NOT NULL)")
+            s.add("((scheduled_range_id IS NOT NULL AND scheduled_is_active = 1) OR (deadline_range_id IS NOT NULL AND deadline_is_active = 1) OR event_timestamp IS NOT NULL)")
         }
 
         if (!s.isEmpty() || !query.sortOrders.isEmpty()) {
@@ -1097,6 +1218,10 @@ class DataRepository @Inject constructor(
         return db.note().get(noteId)
     }
 
+    fun getNotesByTitle(title: String): List<Note> {
+        return db.note().getByTitle(title)
+    }
+
     fun getFirstNote(noteIds: Set<Long>): Note? {
         return db.note().getFirst(noteIds)
     }
@@ -1109,8 +1234,16 @@ class DataRepository @Inject constructor(
         return db.note().getAncestors(noteId)
     }
 
+    fun getNoteAndAncestors(noteId: Long): List<Note> {
+        return db.note().getNoteAndAncestors(noteId)
+    }
+
     fun getNotesAndSubtrees(ids: Set<Long>): List<Note> {
         return db.note().getNotesForSubtrees(ids)
+    }
+
+    fun getNotesAndSubtreesCount(ids: Set<Long>): Int {
+        return db.note().getNotesForSubtreesCount(ids)
     }
 
     fun getNoteChildren(id: Long): List<Note> {
@@ -1183,10 +1316,18 @@ class DataRepository @Inject constructor(
     private fun createNote(notePayload: NotePayload, target: NotePlace, time: Long): Note {
         if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, notePayload, target, time)
 
-        val targetNote = if (target.place != Place.UNSPECIFIED) {
+        var targetNote = if (target.place != Place.UNSPECIFIED) {
             db.note().get(target.noteId) ?: throw IOException("Target note not found")
         } else {
             null
+        }
+
+        /* Set place to ABOVE if prepend is enabled in settings and book is not empty */
+        if (target.place == Place.UNSPECIFIED && AppPreferences.isNewNotePrepend(context)) {
+            targetNote = db.note().getFirstNoteInBook(target.bookId)
+            if (targetNote != null) {
+                target.place = Place.ABOVE
+            }
         }
 
         val newNotePosition = when (target.place) {
@@ -1327,10 +1468,10 @@ class DataRepository @Inject constructor(
     }
 
 
-    fun updateNote(noteId: Long, notePayload: NotePayload) {
-        val note = db.note().get(noteId) ?: return
+    fun updateNote(noteId: Long, notePayload: NotePayload): Note? {
+        val note = db.note().get(noteId) ?: return null
 
-        db.runInTransaction {
+        return db.runInTransaction(Callable {
             updateBookIsModified(note.position.bookId, true)
 
             replaceNoteProperties(noteId, notePayload.properties)
@@ -1351,7 +1492,9 @@ class DataRepository @Inject constructor(
             val count = db.note().update(newNote)
 
             if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, "Updated $count note: $newNote")
-        }
+
+            newNote
+        })
     }
 
     fun deleteNotes(bookId: Long, ids: Set<Long>): Int {
@@ -1383,7 +1526,7 @@ class DataRepository @Inject constructor(
             parseAndInsertEvents(noteId, title)
         }
 
-        if (! content.isNullOrEmpty()) {
+        if (!content.isNullOrEmpty()) {
             parseAndInsertEvents(noteId, content)
         }
     }
@@ -1410,15 +1553,14 @@ class DataRepository @Inject constructor(
     fun loadBookFromRepo(rook: Rook): BookView? {
         val fileName = BookName.getFileName(context, rook.uri)
 
-        return loadBookFromRepo(rook.repoUri, fileName)
+        return loadBookFromRepo(rook.repoId, rook.repoType, rook.repoUri.toString(), fileName)
     }
 
     @Throws(IOException::class)
-    fun loadBookFromRepo(repoUri: Uri, fileName: String): BookView? {
+    fun loadBookFromRepo(repoId: Long, repoType: RepoType, repoUrl: String, fileName: String): BookView? {
         val book: BookView?
 
-        val repo = repoFactory.getFromUri(context, repoUri)
-                ?: throw IOException("Unsupported repository URL \"$repoUri\"")
+        val repo = getRepoInstance(repoId, repoType, repoUrl)
 
         val tmpFile = getTempBookFile()
         try {
@@ -1455,7 +1597,7 @@ class DataRepository @Inject constructor(
     @Throws(IOException::class)
     fun loadBookFromFile(
             name: String,
-            format: BookFormat,
+            @Suppress("UNUSED_PARAMETER") format: BookFormat,
             file: File,
             vrook: VersionedRook? = null,
             selectedEncoding: String? = null
@@ -1529,6 +1671,7 @@ class DataRepository @Inject constructor(
 
         val useCreatedAtProperty = AppPreferences.createdAt(context)
         val createdAtProperty = AppPreferences.createdAtProperty(context)
+        val startFolded = AppPreferences.notebooksStartFolded(context)
 
         BufferedReader(inReader).use { reader ->
             /*
@@ -1557,14 +1700,14 @@ class DataRepository @Inject constructor(
                             }
 
                             val position = NotePosition(
-                                    bookId,
-                                    node.lft,
-                                    node.rgt,
-                                    node.level,
-                                    0,
-                                    0,
-                                    false,
-                                    node.descendantsCount)
+                                    bookId = bookId,
+                                    lft = node.lft,
+                                    rgt = node.rgt,
+                                    level = node.level,
+                                    parentId = 0,
+                                    foldedUnderId = 0,
+                                    isFolded = startFolded && node.level > 0,
+                                    descendantsCount = node.descendantsCount)
 
                             val note = Note(
                                     0,
@@ -1600,6 +1743,11 @@ class DataRepository @Inject constructor(
                                 if (descendantId != null) {
                                     if (!notesWithParentSet.contains(descendantId)) {
                                         db.note().updateParentForNote(descendantId, noteId)
+
+                                        if (startFolded && position.level > 0) {
+                                            db.note().setFoldedUnder(descendantId, noteId)
+                                        }
+
                                         notesWithParentSet.add(descendantId)
                                     }
 
@@ -1639,19 +1787,7 @@ class DataRepository @Inject constructor(
                     (System.currentTimeMillis() - startedAt) + " ms")
 
         if (vrook != null) {
-            // TODO: Reuse updateBookLinkAndSync
-
-            val repoId = db.repo().getOrInsert(vrook.repoUri.toString())
-            db.bookLink().upsert(bookId, repoId)
-
-            val rookUrlId = db.rookUrl().getOrInsert(vrook.uri.toString())
-            val rookId = db.rook().getOrInsert(repoId, rookUrlId)
-
-            val versionedRookId = db.versionedRook().replace(
-                    VersionedRook(0, rookId, vrook.revision, vrook.mtime))
-
-            db.bookLink().upsert(bookId, repoId)
-            db.bookSync().upsert(bookId, versionedRookId)
+            updateBookLinkAndSync(bookId, vrook)
         }
 
         updateBookIsModified(bookId, false)
@@ -1677,36 +1813,36 @@ class DataRepository @Inject constructor(
         }
 
         val startId = getOrgDateTimeId(range.startTime)
-        val endId = if (range.endTime != null) getOrgDateTimeId(range.endTime) else null
 
-        return db.orgRange().insert(com.orgzly.android.db.entity.OrgRange(
-                0,
-                str,
-                startId,
-                endId
-        ))
+        val rangeEndTime = if (range.endTime != null) { range.endTime } else { null }
+        val endId = if (rangeEndTime != null) getOrgDateTimeId(rangeEndTime) else null
+
+        return db.orgRange().insert(OrgRange(0, str, startId, endId))
     }
 
-    fun openSparseTreeForNote(noteId: Long) {
+    fun openBookForNote(noteId: Long, sparseTree: Boolean) {
         val noteView = getNoteView(noteId)
 
         if (noteView != null) {
             val bookId = noteView.note.position.bookId
 
-            unfoldForNote(bookId, noteId)
+            db.runInTransaction {
+                if (sparseTree) {
+                    foldAllNotes(bookId)
+                }
+                unfoldForNote(noteId)
+            }
 
             // Open book
-            val intent = Intent(AppIntent.ACTION_OPEN_BOOK)
-            intent.putExtra(AppIntent.EXTRA_BOOK_ID, bookId)
-            intent.putExtra(AppIntent.EXTRA_NOTE_ID, noteId)
-            LocalBroadcastManager.getInstance(App.getAppContext()).sendBroadcast(intent)
-        }
-    }
-
-    private fun unfoldForNote(bookId: Long, noteId: Long) {
-        db.runInTransaction {
-            foldAllNotes(bookId)
-            unfoldForNote(noteId)
+            // FIXME: Runs with delay to be executed after the observer for unfoldForNote
+            App.EXECUTORS.mainThread().execute {
+                Handler().postDelayed({
+                    val intent = Intent(AppIntent.ACTION_OPEN_BOOK)
+                    intent.putExtra(AppIntent.EXTRA_BOOK_ID, bookId)
+                    intent.putExtra(AppIntent.EXTRA_NOTE_ID, noteId)
+                    LocalBroadcastManager.getInstance(App.getAppContext()).sendBroadcast(intent)
+                }, 100)
+            }
         }
     }
 
@@ -1738,7 +1874,7 @@ class DataRepository @Inject constructor(
         val file = localStorage.getExportFile(book.name, format)
 
         /* Write book. */
-        NotesOrgExporter(context, this).exportBook(book, file)
+        NotesOrgExporter(this).exportBook(book, file)
 
         /* Make file immediately visible when using MTP.
          * See https://github.com/orgzly/orgzly-android/issues/44
@@ -1746,6 +1882,10 @@ class DataRepository @Inject constructor(
         MediaScannerConnection.scanFile(App.getAppContext(), arrayOf(file.absolutePath), null, null)
 
         return file
+    }
+
+    fun exportBook(book: Book, writer: Writer) {
+        NotesOrgExporter(this).exportBook(book, writer)
     }
 
     fun findNoteHavingProperty(name: String, value: String): NoteDao.NoteIdBookId? {
@@ -1811,12 +1951,12 @@ class DataRepository @Inject constructor(
         }
     }
 
-    fun exportSavedSearches() {
-        FileSavedSearchStore(context, this).exportSearches()
+    fun exportSavedSearches(uri: Uri?): Int {
+        return FileSavedSearchStore(context, this).exportSearches(uri)
     }
 
-    fun importSavedSearches(uri: Uri) {
-        FileSavedSearchStore(context, this).importSearches(uri)
+    fun importSavedSearches(uri: Uri): Int {
+        return FileSavedSearchStore(context, this).importSearches(uri)
     }
 
 
@@ -1834,26 +1974,8 @@ class DataRepository @Inject constructor(
         return db.repo().getAllLiveData()
     }
 
-    fun getReposList(): List<Repo> {
+    fun getRepos(): List<Repo> {
         return db.repo().getAll()
-    }
-
-    fun getRepos(): Map<String, SyncRepo> {
-        val repos = db.repo().getAll()
-
-        val result = java.util.HashMap<String, SyncRepo>()
-
-        for ((_, url) in repos) {
-            val repo = repoFactory.getFromUri(context, url)
-
-            if (repo != null) {
-                result[url] = repo
-            } else {
-                Log.e(TAG, "Unsupported repository URL\"$url\"")
-            }
-        }
-
-        return result
     }
 
     fun getRepo(url: String): Repo? {
@@ -1868,22 +1990,33 @@ class DataRepository @Inject constructor(
         return db.repo().get(id)
     }
 
-    fun createRepo(url: String): Long {
-        if (getRepo(url) != null) {
+    fun createRepo(repoWithProps: RepoWithProps): Long {
+        if (getRepo(repoWithProps.repo.url) != null) {
             throw RepoCreate.AlreadyExists()
         }
-        return db.repo().insert(Repo(0, url))
+
+        val id = db.repo().insert(repoWithProps.repo)
+
+        AppPreferences.repoPropsMap(context, id, repoWithProps.props)
+
+        return id
     }
 
-    /**
-     * Since old url might be in use, do not update the existing record, but replace it.
-     */
-    fun updateRepo(id: Long, url: String) {
-        db.repo().replace(id, url)
+    fun updateRepo(repoWithProps: RepoWithProps): Long {
+        // Since old url might be in use, do not update the existing record, but replace it
+        val newId = db.repo().deleteAndInsert(repoWithProps.repo)
+
+        AppPreferences.repoPropsMapDelete(context, repoWithProps.repo.id)
+
+        AppPreferences.repoPropsMap(context, newId, repoWithProps.props)
+
+        return newId
     }
 
     fun deleteRepo(id: Long) {
         db.repo().delete(id)
+
+        AppPreferences.repoPropsMapDelete(context, id)
     }
 
     /*
@@ -1969,7 +2102,7 @@ class DataRepository @Inject constructor(
     }
 
     private fun syncCreatedAtTimeWithPropertyInTransaction() {
-        if (! AppPreferences.createdAt(context)) {
+        if (!AppPreferences.createdAt(context)) {
             return
         }
 
@@ -2034,7 +2167,7 @@ class DataRepository @Inject constructor(
             } // else: Neither created-at time nor property are set
         }
 
-        updateBookIsModified(bookIds.toList(), true)
+        updateBookIsModified(bookIds, true)
     }
 
     private fun setNoteCreatedAt(note: Note, propValue: OrgDateTime, currValue: Long) {
@@ -2104,8 +2237,11 @@ class DataRepository @Inject constructor(
             OrgzlyDatabase.insertDefaultSearches(db.openHelper.writableDatabase)
         }
 
-        /* Clear last sync time. */
+        // Clear last sync time
         AppPreferences.lastSuccessfulSyncTime(context, 0L)
+
+        // Clear repo preferences
+        AppPreferences.repoPropsMapDelete(context)
 
         val intent = Intent(AppIntent.ACTION_DB_CLEARED)
         LocalBroadcastManager.getInstance(context).sendBroadcast(intent)
@@ -2119,6 +2255,19 @@ class DataRepository @Inject constructor(
             val timestamp = OrgDateTime.doParse(it.string).calendar.timeInMillis
             db.orgTimestamp().update(it.copy(timestamp = timestamp))
         }
+    }
+
+    fun getRepoInstance(id: Long, type: RepoType, url: String): SyncRepo {
+        // Load additional repo parameters, if available
+        val props = getRepoPropsMap(id)
+
+        val repoWithProps = RepoWithProps(Repo(id, type, url), props)
+
+        return repoFactory.getInstance(repoWithProps)
+    }
+
+    fun getRepoPropsMap(id: Long): Map<String, String> {
+        return AppPreferences.repoPropsMap(context, id)
     }
 
     companion object {

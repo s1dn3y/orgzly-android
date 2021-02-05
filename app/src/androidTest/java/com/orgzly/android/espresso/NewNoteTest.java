@@ -1,14 +1,12 @@
 package com.orgzly.android.espresso;
 
+import androidx.test.core.app.ActivityScenario;
+
 import com.orgzly.R;
 import com.orgzly.android.OrgzlyTest;
 import com.orgzly.android.ui.main.MainActivity;
 
-import org.junit.Ignore;
-import org.junit.Rule;
 import org.junit.Test;
-
-import androidx.test.rule.ActivityTestRule;
 
 import static androidx.test.espresso.Espresso.onView;
 import static androidx.test.espresso.Espresso.pressBack;
@@ -25,19 +23,12 @@ import static com.orgzly.android.espresso.EspressoUtils.replaceTextCloseKeyboard
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.endsWith;
 
-/**
- *
- */
-//@Ignore
-@SuppressWarnings("unchecked")
 public class NewNoteTest extends OrgzlyTest {
-    @Rule
-    public ActivityTestRule activityRule = new EspressoActivityTestRule<>(MainActivity.class, true, false);
-
     @Test
     public void testNewNoteInEmptyNotebook() {
         testUtils.setupBook("notebook", "");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
+
         onBook(0).perform(click());
 
         onView(withId(R.id.fab)).perform(click());
@@ -52,7 +43,8 @@ public class NewNoteTest extends OrgzlyTest {
     @Test
     public void testNewNoteUnder() {
         testUtils.setupBook("notebook", "description\n* 1\n** 2\n*** 3\n*** 4\n** 5\n* 6");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
+
         onBook(0).perform(click());
 
         onNoteInBook(2).perform(longClick());
@@ -70,7 +62,8 @@ public class NewNoteTest extends OrgzlyTest {
     @Test
     public void testNewNoteAbove() {
         testUtils.setupBook("notebook", "description\n* 1\n** 2\n*** 3\n*** 4\n** 5\n* 6");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
+
         onBook(0).perform(click());
 
         onNoteInBook(2).perform(longClick());
@@ -93,7 +86,8 @@ public class NewNoteTest extends OrgzlyTest {
                                           "*** 4\n" +
                                           "** 5\n" +
                                           "* 6");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
+
         onBook(0).perform(click());
 
         onNoteInBook(2).perform(longClick());
@@ -121,7 +115,8 @@ public class NewNoteTest extends OrgzlyTest {
     @Test
     public void testNewNoteAfterMovingNotesAround() {
         testUtils.setupBook("notebook-1", "");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
+
         onBook(0).perform(click());
 
         onView(withId(R.id.fab)).perform(click());

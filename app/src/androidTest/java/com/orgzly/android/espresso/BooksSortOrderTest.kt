@@ -1,6 +1,7 @@
 package com.orgzly.android.espresso
 
 import androidx.annotation.StringRes
+import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso.*
 import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.action.ViewActions.longClick
@@ -13,18 +14,10 @@ import com.orgzly.android.espresso.EspressoUtils.*
 import com.orgzly.android.ui.main.MainActivity
 import org.hamcrest.Matchers.hasToString
 import org.junit.Before
-import org.junit.Ignore
-import org.junit.Rule
 import org.junit.Test
 
-/**
- *
- */
-//@Ignore
-class BooksSortOrderTest : OrgzlyTest() {
-    @get:Rule
-    var activityRule = EspressoActivityTestRule(MainActivity::class.java, true, false)
 
+class BooksSortOrderTest : OrgzlyTest() {
     @Before
     @Throws(Exception::class)
     override fun setUp() {
@@ -33,7 +26,7 @@ class BooksSortOrderTest : OrgzlyTest() {
         testUtils.setupBook("Book A", "* Note A-01")
         testUtils.setupBook("Book B", "* Note B-01")
 
-        activityRule.launchActivity(null)
+        ActivityScenario.launch(MainActivity::class.java)
     }
 
     @Test

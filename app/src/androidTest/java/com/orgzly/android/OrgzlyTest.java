@@ -1,8 +1,10 @@
 package com.orgzly.android;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 
 import com.orgzly.R;
@@ -17,12 +19,15 @@ import com.orgzly.org.datetime.OrgDateTime;
 
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 
 import java.lang.reflect.Field;
 import java.util.Arrays;
 import java.util.Calendar;
 
+import androidx.core.content.pm.PackageInfoCompat;
 import androidx.test.platform.app.InstrumentationRegistry;
+import androidx.test.rule.GrantPermissionRule;
 
 /**
  * Sets up the environment for tests, such as shelf, preferences and contexts.
@@ -40,11 +45,16 @@ public class OrgzlyTest {
 
     private UserTimeFormatter userTimeFormatter;
 
+    protected LocalStorage localStorage;
+
     protected DataRepository dataRepository;
 
-    protected RepoFactory repoFactory;
-
     private OrgzlyDatabase database;
+
+    @Rule
+    public GrantPermissionRule mRuntimePermissionRule = GrantPermissionRule.grant(
+            Manifest.permission.READ_EXTERNAL_STORAGE,
+            Manifest.permission.WRITE_EXTERNAL_STORAGE);
 
     @Before
     public void setUp() throws Exception {
@@ -54,24 +64,22 @@ public class OrgzlyTest {
 
         dbRepoBookRepository = new DbRepoBookRepository(database);
 
-        repoFactory = new RepoFactory(dbRepoBookRepository);
+        localStorage = new LocalStorage(context);
+
+        RepoFactory repoFactory = new RepoFactory(context, dbRepoBookRepository);
 
         dataRepository = new DataRepository(
-                context,
-                database,
-                repoFactory,
-                context.getResources(),
-                new LocalStorage(context));
+                context, database, repoFactory, context.getResources(), localStorage);
 
-        testUtils = new TestUtils(context, dataRepository, repoFactory, dbRepoBookRepository);
+        testUtils = new TestUtils(dataRepository, dbRepoBookRepository);
 
         userTimeFormatter = new UserTimeFormatter(context);
 
-        // new LocalStorage(context).cleanup();
-
-        dataRepository.clearDatabase();
+        // localStorage.cleanup();
 
         setupPreferences();
+
+        dataRepository.clearDatabase();
     }
 
     @After
@@ -98,7 +106,8 @@ public class OrgzlyTest {
     private void setPreferencesForTests() {
         /* Last used version. */
         try {
-            int versionCode = context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionCode;
+            PackageInfo info = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
+            int versionCode = (int) PackageInfoCompat.getLongVersionCode(info);
             AppPreferences.lastUsedVersionCode(context, versionCode);
         } catch (PackageManager.NameNotFoundException e) {
             e.printStackTrace();

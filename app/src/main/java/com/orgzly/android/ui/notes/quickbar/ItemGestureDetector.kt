@@ -7,6 +7,7 @@ import android.view.ViewConfiguration
 import androidx.recyclerview.widget.RecyclerView
 import com.orgzly.BuildConfig
 import com.orgzly.android.util.LogUtils
+import kotlin.math.abs
 
 class ItemGestureDetector(context: Context, private val listener: Listener) :
         RecyclerView.OnItemTouchListener {
@@ -29,11 +30,6 @@ class ItemGestureDetector(context: Context, private val listener: Listener) :
                 false
             }
         }
-
-        override fun onScroll(e1: MotionEvent, e2: MotionEvent, distanceX: Float, distanceY: Float): Boolean {
-            if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, e1.action, e2.action)
-            return super.onScroll(e1, e2, distanceX, distanceY)
-        }
     })
 
     override fun onTouchEvent(rv: RecyclerView, e: MotionEvent) {
@@ -53,13 +49,13 @@ class ItemGestureDetector(context: Context, private val listener: Listener) :
      * @return -1 for left fling, 1 for right fling, 0 if the fling is not horizontal
      */
     private fun isHorizontalFling(velocityX: Float, velocityY: Float): Int {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, velocityX, velocityY, minFlingVelocity, maxFlingVelocity)
+        val x = abs(velocityX)
+        val y = abs(velocityY)
 
-        val x = Math.abs(velocityX)
-        val y = Math.abs(velocityY)
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, "$x ($minFlingVelocity-$maxFlingVelocity), $y")
 
         // Large enough horizontal velocity and greater then vertical
-        val isHorizontalFLing = x >= minFlingVelocity && x <= maxFlingVelocity && x > 3 * y
+        val isHorizontalFLing = minFlingVelocity <= x && x <= maxFlingVelocity && x > 3 * y
 
         return if (isHorizontalFLing) {
             if (velocityX > 0) 1 else -1

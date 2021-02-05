@@ -10,6 +10,7 @@ import androidx.annotation.IdRes
 import com.orgzly.BuildConfig
 import com.orgzly.R
 import com.orgzly.android.ui.notes.NoteItemViewHolder
+import com.orgzly.android.ui.util.styledAttributes
 import com.orgzly.android.util.LogUtils
 
 
@@ -24,7 +25,7 @@ class QuickBar(val context: Context, val inBook: Boolean) {
         if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, "$state - bind -> id:${holder.itemId}")
 
         if (state.id == holder.itemId) {
-            if (holder.actionBarLeft.childCount == 0 && holder.actionBarRight.childCount == 0) {
+            if (holder.binding.quickBar.quickBarLeft.childCount == 0 && holder.binding.quickBar.quickBarRight.childCount == 0) {
                 val direction = state.direction
                 val listener = state.listener
 
@@ -33,19 +34,19 @@ class QuickBar(val context: Context, val inBook: Boolean) {
                 }
             }
 
-            holder.actionBar.visibility = View.VISIBLE
+            holder.binding.quickBar.quickBarFlipper.visibility = View.VISIBLE
 
             state.direction?.let {
-                animator.removeFlipperAnimation(holder.actionBar)
+                animator.removeFlipperAnimation(holder.binding.quickBar.quickBarFlipper)
 
-                flipForDirection(holder.actionBar, it)
+                flipForDirection(holder.binding.quickBar.quickBarFlipper, it)
             }
 
             // Update view as user scrolls
-            state = state.copy(layout = holder.actionBar)
+            state = state.copy(layout = holder.binding.quickBar.quickBarFlipper)
 
         } else {
-            holder.actionBar.visibility = View.GONE
+            holder.binding.quickBar.quickBarFlipper.visibility = View.GONE
         }
     }
 
@@ -71,54 +72,52 @@ class QuickBar(val context: Context, val inBook: Boolean) {
     fun open(holder: NoteItemViewHolder, direction: Int, listener: QuickBarListener) {
         inflate(holder, listener, direction)
 
-        animator.removeFlipperAnimation(holder.actionBar)
+        animator.removeFlipperAnimation(holder.binding.quickBar.quickBarFlipper)
 
-        animator.open(holder.actionBar)
+        animator.open(holder.binding.quickBar.quickBarFlipper)
 
-        state = State(direction, holder.itemId, holder.actionBar, listener)
+        state = State(direction, holder.itemId, holder.binding.quickBar.quickBarFlipper, listener)
     }
 
     private fun change(holder: NoteItemViewHolder, direction: Int, listener: QuickBarListener) {
-        animator.setFlipperAnimation(holder.actionBar, direction)
+        animator.setFlipperAnimation(holder.binding.quickBar.quickBarFlipper, direction)
 
-        flipForDirection(holder.actionBar, direction)
+        flipForDirection(holder.binding.quickBar.quickBarFlipper, direction)
 
-        state = State(direction, holder.itemId, holder.actionBar, listener)
+        state = State(direction, holder.itemId, holder.binding.quickBar.quickBarFlipper, listener)
     }
 
     private fun inflate(holder: NoteItemViewHolder, listener: QuickBarListener, direction: Int) {
         val inflater = LayoutInflater.from(context)
 
-        val typedArray = context.obtainStyledAttributes(R.styleable.Icons)
+        context.styledAttributes(R.styleable.Icons) { typedArray ->
+            fun doInflate(container: ViewGroup, buttons: List<Button>) {
+                container.removeAllViews()
 
-        fun doInflate(container: ViewGroup, buttons: List<Button>) {
-            container.removeAllViews()
+                buttons.forEach { button ->
+                    (inflater.inflate(R.layout.quick_bar_button, container, false) as ImageButton).apply {
+                        id = button.id
 
-            buttons.forEach { button ->
-                (inflater.inflate(R.layout.quick_bar_button, container, false) as ImageButton).apply {
-                    id = button.id
+                        setImageResource(typedArray.getResourceId(button.icon, 0))
 
-                    setImageResource(typedArray.getResourceId(button.icon, 0))
+                        setOnClickListener {
+                            listener.onQuickBarButtonClick(button.id, holder.itemId)
+                        }
 
-                    setOnClickListener {
-                        listener.onQuickBarButtonClick(button.id, holder.itemId)
+                        container.addView(this)
                     }
-
-                    container.addView(this)
                 }
             }
+
+            Buttons.fromPreferences(context).let {
+                doInflate(holder.binding.quickBar.quickBarLeft, if (inBook) it.leftSwipeInBook else it.leftSwipeInQuery)
+                doInflate(holder.binding.quickBar.quickBarRight, it.rightSwipeInBook)
+            }
+
+            animator.removeFlipperAnimation(holder.binding.quickBar.quickBarFlipper)
+
+            flipForDirection(holder.binding.quickBar.quickBarFlipper, direction)
         }
-
-        Buttons.fromPreferences(context).let {
-            doInflate(holder.actionBarLeft, if (inBook) it.leftSwipeInBook else it.leftSwipeInQuery)
-            doInflate(holder.actionBarRight, it.rightSwipeInBook)
-        }
-
-        animator.removeFlipperAnimation(holder.actionBar)
-
-        flipForDirection(holder.actionBar, direction)
-
-        typedArray.recycle()
     }
 
     private fun flipForDirection(flipper: ViewFlipper, direction: Int) {
@@ -180,7 +179,7 @@ class QuickBar(val context: Context, val inBook: Boolean) {
                     Button(R.id.quick_bar_focus, R.styleable.Icons_ic_center_focus_strong_24dp)
             )
 
-            fun fromPreferences(context: Context): Buttons {
+            fun fromPreferences(@Suppress("UNUSED_PARAMETER") context: Context): Buttons {
                 // TODO: Allow user to modify buttons
                 return Buttons(RIGHT_IN_BOOK, LEFT_IN_BOOK, LEFT_IN_QUERY)
             }

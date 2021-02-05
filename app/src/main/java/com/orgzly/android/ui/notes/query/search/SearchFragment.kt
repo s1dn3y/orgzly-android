@@ -2,14 +2,12 @@ package com.orgzly.android.ui.notes.query.search
 
 import android.os.Bundle
 import android.view.*
-import android.widget.ViewFlipper
 import androidx.appcompat.view.ActionMode
 import androidx.appcompat.widget.Toolbar
 import androidx.lifecycle.Observer
 import androidx.lifecycle.ViewModelProviders
 import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import com.orgzly.BuildConfig
 import com.orgzly.R
 import com.orgzly.android.db.entity.NoteView
@@ -18,7 +16,6 @@ import com.orgzly.android.ui.BottomActionBar
 import com.orgzly.android.ui.OnViewHolderClickListener
 import com.orgzly.android.ui.SelectableItemAdapter
 import com.orgzly.android.ui.notes.NoteItemViewHolder
-import com.orgzly.android.ui.notes.SearchAdapter
 import com.orgzly.android.ui.notes.query.QueryFragment
 import com.orgzly.android.ui.notes.query.QueryViewModel
 import com.orgzly.android.ui.notes.query.QueryViewModelFactory
@@ -26,8 +23,9 @@ import com.orgzly.android.ui.notes.quickbar.ItemGestureDetector
 import com.orgzly.android.ui.notes.quickbar.QuickBarListener
 import com.orgzly.android.ui.notes.quickbar.QuickBars
 import com.orgzly.android.ui.util.ActivityUtils
+import com.orgzly.android.ui.util.setup
 import com.orgzly.android.util.LogUtils
-import java.util.*
+import com.orgzly.databinding.FragmentQuerySearchBinding
 
 /**
  * Displays search results.
@@ -39,12 +37,12 @@ class SearchFragment :
         BottomActionBar.Callback,
         QuickBarListener {
 
-    private lateinit var viewFlipper: ViewFlipper
+    private lateinit var binding: FragmentQuerySearchBinding
 
     private lateinit var viewAdapter: SearchAdapter
 
-    override fun getAdapter(): SelectableItemAdapter {
-        return viewAdapter
+    override fun getAdapter(): SelectableItemAdapter? {
+        return if (::viewAdapter.isInitialized) viewAdapter else null
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,28 +53,29 @@ class SearchFragment :
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, inflater, container, savedInstanceState)
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, savedInstanceState)
 
-        val view = inflater.inflate(R.layout.fragment_query_search, container, false)
+        binding = FragmentQuerySearchBinding.inflate(inflater, container, false)
 
-        viewFlipper = view.findViewById(R.id.fragment_query_search_view_flipper)
-
-        setupRecyclerView(view)
-
-        return view
+        return binding.root
     }
 
-    private fun setupRecyclerView(view: View) {
-        val quickBars = QuickBars(view.context, false)
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, savedInstanceState)
 
-        viewAdapter = SearchAdapter(view.context, this, quickBars)
+        val quickBars = QuickBars(binding.root.context, false)
+
+        viewAdapter = SearchAdapter(binding.root.context, this, quickBars)
         viewAdapter.setHasStableIds(true)
+
+        // Restores selection, requires adapter
+        super.onViewCreated(view, savedInstanceState)
 
         val layoutManager = LinearLayoutManager(context)
 
         val dividerItemDecoration = DividerItemDecoration(context, layoutManager.orientation)
 
-        view.findViewById<RecyclerView>(R.id.fragment_query_search_recycler_view).let { rv ->
+        binding.fragmentQuerySearchRecyclerView.let { rv ->
             rv.layoutManager = layoutManager
             rv.adapter = viewAdapter
             rv.addItemDecoration(dividerItemDecoration)
@@ -101,6 +100,8 @@ class SearchFragment :
 //
 //            itemTouchHelper.attachToRecyclerView(rv)
         }
+
+        binding.swipeContainer.setup()
     }
 
     override fun onQuickBarButtonClick(buttonId: Int, itemId: Long) {
@@ -108,13 +109,14 @@ class SearchFragment :
     }
 
     override fun onActivityCreated(savedInstanceState: Bundle?) {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, savedInstanceState)
         super.onActivityCreated(savedInstanceState)
+
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, savedInstanceState)
 
         viewModel.viewState.observe(viewLifecycleOwner, Observer { state ->
             if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, "Observed load state: $state")
 
-            viewFlipper.apply {
+            binding.fragmentQuerySearchViewFlipper.apply {
                 displayedChild = when (state) {
                     QueryViewModel.ViewState.LOADING -> 0
                     QueryViewModel.ViewState.LOADED -> 1
@@ -145,18 +147,18 @@ class SearchFragment :
     override fun onClick(view: View, position: Int, item: NoteView) {
         if (!AppPreferences.isReverseNoteClickAction(context)) {
             if (viewAdapter.getSelection().count > 0) {
-                toggleNoteSelection(view, position, item)
+                toggleNoteSelection(position, item)
             } else {
                 openNote(item.note.id)
             }
         } else {
-            toggleNoteSelection(view, position, item)
+            toggleNoteSelection(position, item)
         }
     }
 
     override fun onLongClick(view: View, position: Int, item: NoteView) {
         if (!AppPreferences.isReverseNoteClickAction(context)) {
-            toggleNoteSelection(view, position, item)
+            toggleNoteSelection(position, item)
         } else {
             openNote(item.note.id)
         }
@@ -166,7 +168,7 @@ class SearchFragment :
         listener?.onNoteOpen(id)
     }
 
-    private fun toggleNoteSelection(view: View, position: Int, item: NoteView) {
+    private fun toggleNoteSelection(position: Int, item: NoteView) {
         val noteId = item.note.id
 
         viewAdapter.getSelection().toggle(noteId)

@@ -1,13 +1,14 @@
 package com.orgzly.android.ui.notes.book
 
-import androidx.lifecycle.ViewModelProviders
 import android.content.Context
 import android.graphics.Typeface
 import android.os.Bundle
 import android.view.*
-import android.widget.EditText
+import androidx.fragment.app.Fragment
+import androidx.lifecycle.ViewModelProviders
 import com.orgzly.BuildConfig
 import com.orgzly.R
+import com.orgzly.android.App
 import com.orgzly.android.BookUtils
 import com.orgzly.android.data.DataRepository
 import com.orgzly.android.db.entity.Book
@@ -15,19 +16,19 @@ import com.orgzly.android.prefs.AppPreferences
 import com.orgzly.android.ui.main.SharedMainActivityViewModel
 import com.orgzly.android.ui.util.ActivityUtils
 import com.orgzly.android.util.LogUtils
-import dagger.android.support.DaggerFragment
+import com.orgzly.databinding.FragmentBookPrefaceBinding
 import javax.inject.Inject
 
 /**
  * Book's preface and settings.
  */
-class BookPrefaceFragment : DaggerFragment() {
+class BookPrefaceFragment : Fragment() {
+
+    private lateinit var binding: FragmentBookPrefaceBinding
 
     private var bookId: Long = 0
 
     private var book: Book? = null
-
-    private lateinit var contentView: EditText
 
     private var listener: Listener? = null
 
@@ -37,64 +38,66 @@ class BookPrefaceFragment : DaggerFragment() {
     private lateinit var sharedMainActivityViewModel: SharedMainActivityViewModel
 
     override fun onAttach(context: Context) {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, activity)
         super.onAttach(context)
+
+        App.appComponent.inject(this)
+
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, activity)
 
         listener = activity as Listener
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, savedInstanceState)
         super.onCreate(savedInstanceState)
 
-        sharedMainActivityViewModel = activity?.let {
-            ViewModelProviders.of(it).get(SharedMainActivityViewModel::class.java)
-        } ?: throw IllegalStateException("No Activity")
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, savedInstanceState)
+
+        sharedMainActivityViewModel = ViewModelProviders.of(requireActivity())
+                .get(SharedMainActivityViewModel::class.java)
 
         setHasOptionsMenu(true)
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, inflater, container, savedInstanceState)
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, savedInstanceState)
 
-        val top = inflater.inflate(R.layout.fragment_book_preface, container, false)
+        binding = FragmentBookPrefaceBinding.inflate(inflater, container, false)
 
-        contentView = top.findViewById<View>(R.id.fragment_book_preface_content) as EditText
+        return binding.root
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
 
         val activity = activity
 
         if (activity != null && AppPreferences.isFontMonospaced(context)) {
-            contentView.typeface = Typeface.MONOSPACE
+            binding.fragmentBookPrefaceContent.typeface = Typeface.MONOSPACE
         }
 
         // Open keyboard
         if (activity != null) {
-            ActivityUtils.openSoftKeyboardWithDelay(activity, contentView)
+            ActivityUtils.openSoftKeyboardWithDelay(activity, binding.fragmentBookPrefaceContent)
         }
 
         /* Parse arguments - set content. */
-        arguments?.let {
-            if (!it.containsKey(ARG_BOOK_ID)) {
-                throw IllegalArgumentException("No book id passed")
-            }
+        requireArguments().apply {
+            require(containsKey(ARG_BOOK_ID)) { "No book id passed" }
 
-            if (!it.containsKey(ARG_BOOK_PREFACE)) {
-                throw IllegalArgumentException("No book preface passed")
-            }
+            require(containsKey(ARG_BOOK_PREFACE)) { "No book preface passed" }
 
-            bookId = it.getLong(ARG_BOOK_ID)
+            bookId = getLong(ARG_BOOK_ID)
 
-            contentView.setText(it.getString(ARG_BOOK_PREFACE))
-        } ?: throw IllegalArgumentException("No arguments passed")
+            binding.fragmentBookPrefaceContent.setText(getString(ARG_BOOK_PREFACE))
+        }
 
         book = dataRepository.getBook(bookId)
-
-        return top
     }
 
     override fun onResume() {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG)
         super.onResume()
+
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG)
 
         announceChangesToActivity()
     }
@@ -108,8 +111,9 @@ class BookPrefaceFragment : DaggerFragment() {
     }
 
     override fun onDetach() {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG)
         super.onDetach()
+
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG)
 
         listener = null
     }
@@ -136,7 +140,7 @@ class BookPrefaceFragment : DaggerFragment() {
             }
 
             R.id.done -> {
-                save(contentView.text.toString())
+                save(binding.fragmentBookPrefaceContent.text.toString())
                 return true
             }
 

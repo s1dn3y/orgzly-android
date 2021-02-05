@@ -1,12 +1,13 @@
 package com.orgzly.android.usecase
 
 import com.orgzly.android.data.DataRepository
+import com.orgzly.android.repos.RepoWithProps
 
-class RepoCreate(val url: String) : UseCase() {
+class RepoCreate(val props: RepoWithProps) : UseCase() {
     override fun run(dataRepository: DataRepository): UseCaseResult {
-        dataRepository.createRepo(url)
+        val id = dataRepository.createRepo(props)
 
-        return UseCaseResult()
+        return UseCaseResult(id)
     }
 
     class AlreadyExists: Throwable()

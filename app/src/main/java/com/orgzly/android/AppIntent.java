@@ -25,8 +25,8 @@ public class AppIntent {
     public static final String ACTION_SYNC_CREATED_AT_WITH_PROPERTY = "com.orgzly.intent.action.SYNC_CREATED_AT_WITH_PROPERTY";
 
     public static final String ACTION_OPEN_NOTE = "com.orgzly.intent.action.OPEN_NOTE";
-    public static final String ACTION_OPEN_NOTE_WITH_PROPERTY = "com.orgzly.intent.action.OPEN_NOTE_WITH_PROPERTY";
-    public static final String ACTION_OPEN_FILE_LINK = "com.orgzly.intent.action.OPEN_FILE_LINK";
+    public static final String ACTION_FOLLOW_LINK_TO_NOTE_WITH_PROPERTY = "com.orgzly.intent.action.FOLLOW_LINK_TO_NOTE_WITH_PROPERTY";
+    public static final String ACTION_FOLLOW_LINK_TO_FILE = "com.orgzly.intent.action.FOLLOW_LINK_TO_FILE";
     public static final String ACTION_OPEN_SAVED_SEARCHES = "com.orgzly.intent.action.OPEN_SAVED_SEARCHES";
     public static final String ACTION_OPEN_QUERY = "com.orgzly.intent.action.OPEN_QUERY";
     public static final String ACTION_OPEN_BOOKS = "com.orgzly.intent.action.OPEN_BOOKS";
@@ -51,4 +51,5 @@ public class AppIntent {
     public static final String EXTRA_CLICK_TYPE = "com.orgzly.intent.extra.CLICK_TYPE";
     public static final String EXTRA_SAVED_SEARCH_ID = "com.orgzly.intent.extra.SAVED_SEARCH_ID";
     public static final String EXTRA_IS_AUTOMATIC = "com.orgzly.intent.extra.IS_AUTOMATIC";
+    public static final String EXTRA_REMINDER_EVENT = "com.orgzly.intent.extra.REMINDER_EVENT";
 }

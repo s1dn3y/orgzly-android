@@ -3,11 +3,37 @@ package com.orgzly.android.ui.notes.query.agenda
 import com.orgzly.android.db.entity.NoteView
 import com.orgzly.android.query.Query
 import com.orgzly.android.query.user.InternalQueryParser
+import com.orgzly.android.ui.TimeType
 import com.orgzly.android.util.AgendaUtils
+import com.orgzly.org.datetime.OrgInterval
+import com.orgzly.org.datetime.OrgRange
 import org.joda.time.DateTime
 
 object AgendaItems {
-    data class ExpandableOrgRange(val range: String?, val overdueToday: Boolean)
+    data class ExpandableOrgRange(
+            val range: OrgRange,
+            val canBeOverdueToday: Boolean,
+            val warningPeriod: OrgInterval?,
+            val delayPeriod: OrgInterval?) {
+
+        companion object {
+            fun fromRange(timeType: TimeType, range: OrgRange): ExpandableOrgRange {
+                val canBeOverdueToday = timeType == TimeType.SCHEDULED || timeType == TimeType.DEADLINE
+
+                val warningPeriod = when (timeType) {
+                    TimeType.DEADLINE -> range.startTime.delay
+                    else -> null
+                }
+
+                val delayPeriod = when (timeType) {
+                    TimeType.SCHEDULED -> range.startTime.delay
+                    else -> null
+                }
+
+                return ExpandableOrgRange(range, canBeOverdueToday, warningPeriod, delayPeriod)
+            }
+        }
+    }
 
     fun getList(
             notes: List<NoteView>, queryString: String?, idMap: MutableMap<Long, Long>
@@ -40,49 +66,84 @@ object AgendaItems {
 
         item2databaseIds.clear()
 
-        var index = 1L
+        var agendaItemId = 1L
 
         val now = DateTime.now().withTimeAtStartOfDay()
 
-        // Create day buckets
-        val dayBuckets = (0 until agendaDays)
+        val overdueNotes = mutableListOf<AgendaItem>()
+
+        val dailyNotes = (0 until agendaDays)
                 .map { i -> now.plusDays(i) }
-                .associateBy(
-                        { it.millis },
-                        { mutableListOf<AgendaItem>(AgendaItem.Divider(index++, it)) })
+                .associateBy({ it.millis }, { mutableListOf<AgendaItem>() })
 
-        val dedup = HashSet<Pair<Long, Long>>()
+        val addedPlanningTimes = HashSet<Long>()
 
-        notes.forEach { note ->
+        fun addInstances(note: NoteView, timeType: TimeType, timeString: String) {
+            val range = OrgRange.parseOrNull(timeString) ?: return
 
-            val times = arrayOf(
-                    ExpandableOrgRange(note.scheduledRangeString, overdueToday = true),
-                    ExpandableOrgRange(note.deadlineRangeString, overdueToday = true),
-                    ExpandableOrgRange(note.eventString, overdueToday = false)
-            )
+            if (!range.startTime.isActive) {
+                return
+            }
 
-            // Expand each note if it has a repeater or is a range
-            val days = AgendaUtils.expandOrgDateTime(times, now, agendaDays)
+            val expandable = ExpandableOrgRange.fromRange(timeType, range)
+
+            val times = AgendaUtils.expandOrgDateTime(expandable, now, agendaDays)
+
+            if (times.isOverdueToday) {
+                overdueNotes.add(AgendaItem.Note(agendaItemId, note, timeType))
+                item2databaseIds[agendaItemId] = note.note.id
+                agendaItemId++
+            }
 
             // Add each note instance to its day bucket
-            days.forEach { day ->
+            times.expanded.forEach { time ->
+                val bucketKey = time.withTimeAtStartOfDay().millis
 
-                val bucketKey = day.millis
-
-                val dedupKey = Pair(bucketKey, note.note.id)
-
-                if (!dedup.contains(dedupKey)) {
-                    dayBuckets[bucketKey]?.let {
-                        it.add(AgendaItem.Note(index, note))
-                        item2databaseIds[index] = note.note.id
-                        index++
-                    }
-
-                    dedup.add(dedupKey)
+                dailyNotes[bucketKey]?.let {
+                    it.add(AgendaItem.Note(agendaItemId, note, timeType))
+                    item2databaseIds[agendaItemId] = note.note.id
+                    agendaItemId++
                 }
             }
         }
 
-        return dayBuckets.values.flatten() // FIXME
+        notes.forEach { note ->
+            // Add planning times for a note only once
+            if (!addedPlanningTimes.contains(note.note.id)) {
+                note.scheduledRangeString?.let {
+                    addInstances(note, TimeType.SCHEDULED, it)
+                }
+                note.deadlineRangeString?.let {
+                    addInstances(note, TimeType.DEADLINE, it)
+                }
+
+                addedPlanningTimes.add(note.note.id)
+            }
+
+            // Add each note's event
+            note.eventString?.let {
+                addInstances(note, TimeType.EVENT, it)
+            }
+        }
+
+        val result = mutableListOf<AgendaItem>()
+
+        // Add overdue heading and notes
+        if (overdueNotes.isNotEmpty()) {
+            result.add(AgendaItem.Overdue(agendaItemId++))
+            result.addAll(overdueNotes)
+        }
+
+        // Add daily
+        dailyNotes.forEach { d ->
+            // Always add day heading
+            result.add(AgendaItem.Day(agendaItemId++, DateTime(d.key)))
+
+            if (d.value.isNotEmpty()) {
+                result.addAll(d.value)
+            }
+        }
+
+        return result
     }
 }

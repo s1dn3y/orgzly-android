@@ -8,19 +8,20 @@ import android.widget.RemoteViews
 import android.widget.RemoteViewsService
 import com.orgzly.BuildConfig
 import com.orgzly.R
+import com.orgzly.android.App
 import com.orgzly.android.AppIntent
 import com.orgzly.android.data.DataRepository
 import com.orgzly.android.db.entity.NoteView
 import com.orgzly.android.prefs.AppPreferences
 import com.orgzly.android.query.Query
 import com.orgzly.android.query.user.InternalQueryParser
+import com.orgzly.android.ui.TimeType
 import com.orgzly.android.ui.notes.query.agenda.AgendaItem
 import com.orgzly.android.ui.notes.query.agenda.AgendaItems
 import com.orgzly.android.ui.util.TitleGenerator
 import com.orgzly.android.util.LogUtils
 import com.orgzly.android.util.UserTimeFormatter
 import com.orgzly.org.datetime.OrgRange
-import dagger.android.AndroidInjection
 import org.joda.time.DateTime
 import javax.inject.Inject
 
@@ -28,10 +29,14 @@ class ListWidgetService : RemoteViewsService() {
     @Inject
     lateinit var dataRepository: DataRepository
 
-    override fun onGetViewFactory(intent: Intent): RemoteViewsService.RemoteViewsFactory {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG)
+    override fun onCreate() {
+        App.appComponent.inject(this)
 
-        AndroidInjection.inject(this)
+        super.onCreate()
+    }
+
+    override fun onGetViewFactory(intent: Intent): RemoteViewsFactory {
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG)
 
         return ListWidgetViewsFactory(
                 applicationContext,
@@ -39,13 +44,21 @@ class ListWidgetService : RemoteViewsService() {
     }
 
     private sealed class WidgetEntry(open val id: Long) {
-        data class WidgetNoteEntry(override val id: Long, val noteView: NoteView) : WidgetEntry(id)
+        data class Overdue(override val id: Long) : WidgetEntry(id)
 
-        data class WidgetDividerEntry(override val id: Long, val day: DateTime) : WidgetEntry(id)
+        data class Day(override val id: Long, val day: DateTime) : WidgetEntry(id)
+
+        data class Note(
+                override val id: Long,
+                val noteView: NoteView,
+                val agendaTimeType: TimeType? = null
+        ) : WidgetEntry(id)
     }
 
-    inner class ListWidgetViewsFactory(val context: Context, val queryString: String) :
-            RemoteViewsService.RemoteViewsFactory {
+    inner class ListWidgetViewsFactory(
+            val context: Context,
+            private val queryString: String
+    ) : RemoteViewsFactory {
 
         private val query: Query by lazy {
             val parser = InternalQueryParser()
@@ -87,14 +100,15 @@ class ListWidgetService : RemoteViewsService() {
 
                 dataList = agendaItems.map {
                     when (it) {
-                        is AgendaItem.Note -> WidgetEntry.WidgetNoteEntry(it.id, it.note)
-                        is AgendaItem.Divider -> WidgetEntry.WidgetDividerEntry(it.id, it.day)
+                        is AgendaItem.Overdue -> WidgetEntry.Overdue(it.id)
+                        is AgendaItem.Day -> WidgetEntry.Day(it.id, it.day)
+                        is AgendaItem.Note -> WidgetEntry.Note(it.id, it.note, it.timeType)
                     }
                 }
 
             } else {
                 dataList = notes.map {
-                    WidgetEntry.WidgetNoteEntry(it.note.id, it)
+                    WidgetEntry.Note(it.note.id, it)
                 }
             }
         }
@@ -111,16 +125,20 @@ class ListWidgetService : RemoteViewsService() {
                 return null
             }
 
-            val entry = dataList[position]
+            return when (val entry = dataList[position]) {
+                is WidgetEntry.Overdue ->
+                    RemoteViews(context.packageName, R.layout.item_list_widget_divider).apply {
+                        setupRemoteViews(this)
+                        WidgetStyle.updateDivider(this, context)
+                    }
 
-            return when (entry) {
-                is WidgetEntry.WidgetDividerEntry ->
+                is WidgetEntry.Day ->
                     RemoteViews(context.packageName, R.layout.item_list_widget_divider).apply {
                         setupRemoteViews(this, entry)
                         WidgetStyle.updateDivider(this, context)
                     }
 
-                is WidgetEntry.WidgetNoteEntry ->
+                is WidgetEntry.Note ->
                     RemoteViews(context.packageName, R.layout.item_list_widget).apply {
                         setupRemoteViews(this, entry)
                         WidgetStyle.updateNote(this, context)
@@ -140,13 +158,19 @@ class ListWidgetService : RemoteViewsService() {
             if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG)
         }
 
-        private fun setupRemoteViews(views: RemoteViews, entry: WidgetEntry.WidgetDividerEntry) {
+        private fun setupRemoteViews(views: RemoteViews) {
+            views.setTextViewText(
+                    R.id.widget_list_item_divider_value,
+                    context.getString(R.string.overdue))
+        }
+
+        private fun setupRemoteViews(views: RemoteViews, entry: WidgetEntry.Day) {
             views.setTextViewText(
                     R.id.widget_list_item_divider_value,
                     userTimeFormatter.formatDate(entry.day))
         }
 
-        private fun setupRemoteViews(row: RemoteViews, entry: WidgetEntry.WidgetNoteEntry) {
+        private fun setupRemoteViews(row: RemoteViews, entry: WidgetEntry.Note) {
             val noteView = entry.noteView
 
             val displayPlanningTimes = AppPreferences.displayPlanning(context)
@@ -173,9 +197,40 @@ class ListWidgetService : RemoteViewsService() {
                 row.setViewVisibility(R.id.item_list_widget_closed, View.GONE)
             }
 
+            var scheduled = noteView.scheduledRangeString
+            var deadline = noteView.deadlineRangeString
+            var event = noteView.eventString
+
+            // In Agenda only display time responsible for item's presence
+            when (entry.agendaTimeType) {
+                TimeType.SCHEDULED -> {
+                    deadline = null
+                    event = null
+                }
+                TimeType.DEADLINE -> {
+                    scheduled = null
+                    event = null
+                }
+                TimeType.EVENT -> {
+                    scheduled = null
+                    deadline = null
+                }
+                else -> {
+                }
+            }
+
+            // Scheduled time
+            if (displayPlanningTimes && scheduled != null) {
+                val time = userTimeFormatter.formatAll(OrgRange.parse(scheduled))
+                row.setTextViewText(R.id.item_list_widget_scheduled_text, time)
+                row.setViewVisibility(R.id.item_list_widget_scheduled, View.VISIBLE)
+            } else {
+                row.setViewVisibility(R.id.item_list_widget_scheduled, View.GONE)
+            }
+
             // Deadline time
-            if (displayPlanningTimes && noteView.deadlineRangeString != null) {
-                val time = userTimeFormatter.formatAll(OrgRange.parse(noteView.deadlineRangeString))
+            if (displayPlanningTimes && deadline != null) {
+                val time = userTimeFormatter.formatAll(OrgRange.parse(deadline))
                 row.setTextViewText(R.id.item_list_widget_deadline_text, time)
                 row.setViewVisibility(R.id.item_list_widget_deadline, View.VISIBLE)
             } else {
@@ -183,25 +238,17 @@ class ListWidgetService : RemoteViewsService() {
             }
 
             // Event time
-            if (displayPlanningTimes && noteView.eventString != null) {
-                val time = userTimeFormatter.formatAll(OrgRange.parse(noteView.eventString))
+            if (displayPlanningTimes && event != null) {
+                val time = userTimeFormatter.formatAll(OrgRange.parse(event))
                 row.setTextViewText(R.id.item_list_widget_event_text, time)
                 row.setViewVisibility(R.id.item_list_widget_event, View.VISIBLE)
             } else {
                 row.setViewVisibility(R.id.item_list_widget_event, View.GONE)
             }
 
-            // Scheduled time
-            if (displayPlanningTimes && noteView.scheduledRangeString != null) {
-                val time = userTimeFormatter.formatAll(OrgRange.parse(noteView.scheduledRangeString))
-                row.setTextViewText(R.id.item_list_widget_scheduled_text, time)
-                row.setViewVisibility(R.id.item_list_widget_scheduled, View.VISIBLE)
-            } else {
-                row.setViewVisibility(R.id.item_list_widget_scheduled, View.GONE)
-            }
 
             // Check mark
-            if (doneStates.contains(noteView.note.state)) {
+            if (!AppPreferences.widgetDisplayCheckmarks(context) || doneStates.contains(noteView.note.state)) {
                 row.setViewVisibility(R.id.item_list_widget_done, View.GONE)
             } else {
                 row.setViewVisibility(R.id.item_list_widget_done, View.VISIBLE)

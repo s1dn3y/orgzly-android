@@ -9,7 +9,7 @@
         android:layout_height="wrap_content"
         android:contentDescription="@string/property"
         android:src="?attr/ic_info_outline_24dp"
-        android:alpha="?attr/oic_item_alpha"/>
+        android:alpha="?attr/active_unfocused_icon_alpha"/>
 
     <EditText
         android:id="@+id/name"
@@ -43,10 +43,7 @@
 
     <ImageButton
         android:id="@+id/delete"
-        style="?android:attr/borderlessButtonStyle"
-        android:contentDescription="@string/new_above"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:src="?attr/ic_close_24dp"
-        android:alpha="?attr/oic_item_alpha"/>
+        style="@style/NoteFragmentButton"
+        android:src="?attr/ic_close_24dp" />
+
 </LinearLayout>

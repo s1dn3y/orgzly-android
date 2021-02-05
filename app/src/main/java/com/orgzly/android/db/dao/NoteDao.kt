@@ -4,6 +4,7 @@ import androidx.lifecycle.LiveData
 import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Transaction
+import com.orgzly.android.db.OrgzlyDatabase
 import com.orgzly.android.db.entity.Note
 import com.orgzly.android.db.entity.NotePosition
 import org.intellij.lang.annotations.Language
@@ -22,6 +23,9 @@ abstract class NoteDao : BaseDao<Note> {
 
     @Query("SELECT * FROM notes WHERE title = :title ORDER BY lft DESC LIMIT 1")
     abstract fun getLast(title: String): Note?
+
+    @Query("SELECT * FROM notes WHERE title = :title ORDER BY lft")
+    abstract fun getByTitle(title: String): List<Note>
 
     @Query("SELECT * FROM notes WHERE id IN (:ids)")
     abstract fun get(ids: Set<Long>): List<Note>
@@ -44,20 +48,13 @@ abstract class NoteDao : BaseDao<Note> {
     @Query("SELECT DISTINCT tags FROM notes WHERE tags IS NOT NULL AND tags != ''")
     abstract fun getDistinctTags(): List<String>
 
-    @Query("""
-        DELETE FROM notes
-        WHERE id IN (
-        SELECT DISTINCT d.id
-        FROM notes n, notes d
-        WHERE n.id IN (:ids) AND d.book_id = n.book_id AND d.is_cut = 0 AND n.lft <= d.lft AND d.rgt <= n.rgt
-        )
-    """)
+    @Query("DELETE FROM notes WHERE id IN ($SELECT_SUBTREE_IDS_FOR_IDS)")
     abstract fun deleteById(ids: Set<Long>): Int
 
     @Query("DELETE FROM notes WHERE book_id = :bookId")
     abstract fun deleteByBookId(bookId: Long)
 
-    @Query(SELECT_NOTE_AND_ANCESTORS_IDS)
+    @Query(SELECT_NOTE_AND_ANCESTORS_IDS_FOR_IDS)
     abstract fun getNoteAndAncestorsIds(ids: List<Long>): List<Long>
 
     @Query("""
@@ -69,19 +66,28 @@ abstract class NoteDao : BaseDao<Note> {
             AND a.level > 0
             AND a.lft < n.lft
             AND n.rgt < a.rgt
-            ORDER BY a.lft DESC
-
+            ORDER BY a.lft
     """)
     abstract fun getAncestors(id: Long): List<Note>
 
-
     @Query("""
-        SELECT d.*
-        FROM notes n, notes d
-        WHERE n.id IN (:ids) AND n.level > 0 AND d.book_id = n.book_id AND d.is_cut = 0 AND n.is_cut = 0 AND n.lft <= d.lft AND d.rgt <= n.rgt
-        GROUP BY d.id ORDER BY d.lft
+            SELECT a.*
+            FROM notes n, notes a
+            WHERE n.id = (:id)
+            AND n.book_id = a.book_id
+            AND a.is_cut = 0
+            AND a.level > 0
+            AND a.lft <= n.lft
+            AND n.rgt <= a.rgt
+            ORDER BY a.lft
     """)
+    abstract fun getNoteAndAncestors(id: Long): List<Note>
+
+    @Query(SELECT_SUBTREE_FOR_IDS)
     abstract fun getNotesForSubtrees(ids: Set<Long>): List<Note>
+
+    @Query("SELECT count(*) FROM ($SELECT_SUBTREE_FOR_IDS)")
+    abstract fun getNotesForSubtreesCount(ids: Set<Long>): Int
 
     @Query("""
         SELECT count(*)
@@ -90,6 +96,12 @@ abstract class NoteDao : BaseDao<Note> {
     """)
     abstract fun getBookUnfoldedNoteCount(bookId: Long): Int
 
+    @Query("""
+        SELECT count(*)
+        FROM notes
+        WHERE id IN ($SELECT_SUBTREE_IDS_FOR_IDS) AND is_folded = 1
+    """)
+    abstract fun getSubtreeFoldedNoteCount(ids: List<Long>): Int
 
     @Query("""
         SELECT * FROM notes
@@ -139,7 +151,7 @@ abstract class NoteDao : BaseDao<Note> {
             FROM notes d
             WHERE (notes.book_id = d.book_id AND $WHERE_EXISTING_NOTES AND notes.lft < d.lft AND d.rgt < notes.rgt)
         )
-        WHERE id IN ($SELECT_NOTE_AND_ANCESTORS_IDS)
+        WHERE id IN ($SELECT_NOTE_AND_ANCESTORS_IDS_FOR_IDS)
     """)
     abstract fun updateDescendantsCountForNoteAndAncestors(ids: List<Long>)
 
@@ -150,7 +162,7 @@ abstract class NoteDao : BaseDao<Note> {
             FROM notes d
             WHERE (notes.book_id = d.book_id AND $WHERE_EXISTING_NOTES AND notes.lft < d.lft AND d.rgt < notes.rgt AND d.id NOT IN (:ignoreIds))
         )
-        WHERE id IN ($SELECT_ANCESTORS_IDS)
+        WHERE id IN ($SELECT_ANCESTORS_IDS_FOR_IDS)
     """)
     abstract fun updateDescendantsCountForAncestors(ids: Set<Long>, ignoreIds: Set<Long> = emptySet())
 
@@ -198,6 +210,29 @@ abstract class NoteDao : BaseDao<Note> {
     @Query("UPDATE notes SET is_folded = 0 WHERE id IN (:ids)")
     abstract fun unfoldNotes(ids: List<Long>)
 
+    @Query("""
+        UPDATE notes
+        SET is_folded = 0, folded_under_id = 0
+        WHERE id IN ($SELECT_SUBTREE_IDS_FOR_IDS)
+    """)
+    abstract fun unfoldSubtrees(ids: List<Long>)
+
+    @Transaction
+    open fun foldSubtrees(ids: List<Long>) {
+        foldSubtreesSetRoots(ids)
+        foldSubtreesSetDescendants(ids)
+    }
+
+    @Query("UPDATE notes SET is_folded = 1 WHERE id IN (:ids)")
+    abstract fun foldSubtreesSetRoots(ids: List<Long>)
+
+    @Query("""
+        UPDATE notes
+        SET is_folded = 1, folded_under_id = parent_id
+        WHERE id IN ($SELECT_DESCENDANTS_IDS_FOR_IDS)
+    """)
+    abstract fun foldSubtreesSetDescendants(ids: List<Long>)
+
     @Query("UPDATE notes SET folded_under_id = 0 WHERE folded_under_id IN (:ids)")
     abstract fun updateFoldedUnderForNoteFoldedUnderId(ids: List<Long>)
 
@@ -234,16 +269,26 @@ abstract class NoteDao : BaseDao<Note> {
     @Query("UPDATE notes SET rgt = rgt + :inc WHERE book_id = :bookId AND is_cut = 0 AND rgt >= :value")
     abstract fun incrementRgtForRgtGeOrRoot(bookId: Long, value: Long, inc: Int)
 
+    @Transaction
+    open fun unfoldNotesFoldedUnderOthers(ids: Set<Long>) {
+        ids.chunked(OrgzlyDatabase.SQLITE_MAX_VARIABLE_NUMBER/2).forEach { chunk ->
+            unfoldNotesFoldedUnderOthersChunk(chunk)
+        }
+    }
+
     @Query("""
         UPDATE notes
         SET folded_under_id = 0
         WHERE id IN (:ids)
         AND folded_under_id NOT IN (:ids)
     """)
-    abstract fun unfoldNotesFoldedUnderOthers(ids: Set<Long>)
+    abstract fun unfoldNotesFoldedUnderOthersChunk(ids: List<Long>)
 
     @Query("UPDATE notes SET folded_under_id = :foldedUnder WHERE id IN (:ids) AND folded_under_id = 0")
     abstract fun foldUnfolded(ids: Set<Long>, foldedUnder: Long)
+
+    @Query("UPDATE notes SET folded_under_id = :parentId WHERE id = :noteId")
+    abstract fun setFoldedUnder(noteId: Long, parentId: Long)
 
     @Query("UPDATE notes SET parent_id = :parentId WHERE id = :noteId")
     abstract fun updateParentForNote(noteId: Long, parentId: Long)
@@ -293,6 +338,9 @@ abstract class NoteDao : BaseDao<Note> {
     @Query("SELECT MAX(rgt) FROM notes WHERE book_id = :bookId AND is_cut = 0")
     abstract fun getMaxRgtForBook(bookId: Long): Long?
 
+    @Query("SELECT * FROM notes WHERE book_id = :bookId AND level > 0 ORDER BY lft LIMIT 1")
+    abstract fun getFirstNoteInBook(bookId: Long): Note?
+
     @Query("UPDATE notes SET created_at= :time WHERE id = :noteId")
     abstract fun updateCreatedAtTime(noteId: Long, time: Long)
 
@@ -301,7 +349,7 @@ abstract class NoteDao : BaseDao<Note> {
         const val WHERE_EXISTING_NOTES = "(is_cut = 0 AND level > 0)"
 
         @Language("RoomSql")
-        const val SELECT_ANCESTORS_IDS = """
+        const val SELECT_ANCESTORS_IDS_FOR_IDS = """
             SELECT DISTINCT a.id
             FROM notes n, notes a
             WHERE n.id IN (:ids)
@@ -313,7 +361,7 @@ abstract class NoteDao : BaseDao<Note> {
             """
 
         @Language("RoomSql")
-        const val SELECT_NOTE_AND_ANCESTORS_IDS = """
+        const val SELECT_NOTE_AND_ANCESTORS_IDS_FOR_IDS = """
             SELECT DISTINCT a.id
             FROM notes n, notes a
             WHERE n.id IN (:ids)
@@ -322,6 +370,43 @@ abstract class NoteDao : BaseDao<Note> {
             AND a.level > 0
             AND a.lft <= n.lft
             AND n.rgt <= a.rgt
+            """
+
+        @Language("RoomSql")
+        private const val SELECT_SUBTREE_FOR_IDS = """
+            SELECT d.*
+            FROM notes n, notes d
+            WHERE n.id IN (:ids)
+            AND n.level > 0
+            AND d.book_id = n.book_id
+            AND d.is_cut = 0
+            AND n.is_cut = 0
+            AND n.lft <= d.lft
+            AND d.rgt <= n.rgt
+            GROUP BY d.id
+            ORDER BY d.lft
+            """
+
+        @Language("RoomSql")
+        private const val SELECT_SUBTREE_IDS_FOR_IDS = """
+            SELECT DISTINCT d.id
+            FROM notes n, notes d
+            WHERE n.id IN (:ids)
+            AND d.book_id = n.book_id
+            AND d.is_cut = 0
+            AND n.lft <= d.lft
+            AND d.rgt <= n.rgt
+            """
+
+        @Language("RoomSql")
+        private const val SELECT_DESCENDANTS_IDS_FOR_IDS = """
+            SELECT DISTINCT d.id
+            FROM notes n, notes d
+            WHERE n.id IN (:ids)
+            AND d.book_id = n.book_id
+            AND d.is_cut = 0
+            AND n.lft < d.lft
+            AND d.rgt < n.rgt
             """
 
         fun rootNote(bookId: Long): Note {

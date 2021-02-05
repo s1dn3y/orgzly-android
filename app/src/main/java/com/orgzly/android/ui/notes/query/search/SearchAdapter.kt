@@ -1,4 +1,4 @@
-package com.orgzly.android.ui.notes
+package com.orgzly.android.ui.notes.query.search
 
 import android.content.Context
 import androidx.recyclerview.widget.ListAdapter
@@ -8,13 +8,15 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import com.orgzly.BuildConfig
-import com.orgzly.R
 import com.orgzly.android.db.entity.NoteView
 import com.orgzly.android.ui.OnViewHolderClickListener
 import com.orgzly.android.ui.SelectableItemAdapter
 import com.orgzly.android.ui.Selection
+import com.orgzly.android.ui.notes.NoteItemViewBinder
+import com.orgzly.android.ui.notes.NoteItemViewHolder
 import com.orgzly.android.ui.notes.quickbar.QuickBars
 import com.orgzly.android.util.LogUtils
+import com.orgzly.databinding.ItemHeadBinding
 
 class SearchAdapter(
         private val context: Context,
@@ -38,10 +40,11 @@ class SearchAdapter(
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
         if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG)
 
-        val layout = LayoutInflater.from(context)
-                .inflate(R.layout.item_head, parent, false)
+        val binding = ItemHeadBinding.inflate(LayoutInflater.from(context), parent, false)
 
-        return NoteItemViewHolder(layout, viewHolderListener)
+        NoteItemViewBinder.setupSpacingForDensitySetting(context, binding)
+
+        return NoteItemViewHolder(binding, viewHolderListener)
     }
 
     override fun onBindViewHolder(h: RecyclerView.ViewHolder, position: Int) {
@@ -76,7 +79,7 @@ class SearchAdapter(
                     }
 
                     override fun areContentsTheSame(oldItem: NoteView, newItem: NoteView): Boolean {
-                        return oldItem == newItem // TODO: Compare content
+                        return oldItem == newItem
                     }
                 }
     }

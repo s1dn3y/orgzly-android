@@ -11,13 +11,18 @@ You can select multiple notes.
 Fling it left to open a different menu.
 
 ** Fold a note which contains sub-notes by clicking the icon next to it
+
+Long-click the icon to unfold entire subtree.
+
 *** There is no limit in number of levels you can have
 **** Use this to better organize your notes
 
 ** Note can have tags :tag1:tag2:
 *** Sub-note inherits the tags :tag3:
 
-If you search for notes with tag “tag1”, this note will be returned as well.
+If you search for notes with tag “tag1” using “t.tag1” query, this note will be included in search results.
+
+*** A note that has the =ARCHIVE= tag set is grayed out :ARCHIVE:
 
 ** TODO Note can have a state
 

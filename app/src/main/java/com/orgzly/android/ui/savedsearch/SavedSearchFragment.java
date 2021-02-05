@@ -1,12 +1,8 @@
 package com.orgzly.android.ui.savedsearch;
 
-import androidx.lifecycle.ViewModelProviders;
-
 import android.app.Activity;
 import android.content.Context;
 import android.os.Bundle;
-import com.google.android.material.textfield.TextInputLayout;
-import androidx.fragment.app.FragmentActivity;
 import android.text.TextUtils;
 import android.view.LayoutInflater;
 import android.view.Menu;
@@ -14,11 +10,16 @@ import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.EditText;
-import android.widget.ViewFlipper;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.fragment.app.Fragment;
+import androidx.fragment.app.FragmentActivity;
+import androidx.lifecycle.ViewModelProviders;
 
 import com.orgzly.BuildConfig;
 import com.orgzly.R;
+import com.orgzly.android.App;
 import com.orgzly.android.data.DataRepository;
 import com.orgzly.android.db.entity.SavedSearch;
 import com.orgzly.android.ui.drawer.DrawerItem;
@@ -26,14 +27,13 @@ import com.orgzly.android.ui.main.SharedMainActivityViewModel;
 import com.orgzly.android.ui.savedsearches.SavedSearchesFragment;
 import com.orgzly.android.ui.util.ActivityUtils;
 import com.orgzly.android.util.LogUtils;
+import com.orgzly.databinding.FragmentSavedSearchBinding;
 
 import java.util.List;
 
 import javax.inject.Inject;
 
-import dagger.android.support.DaggerFragment;
-
-public class SavedSearchFragment extends DaggerFragment implements DrawerItem {
+public class SavedSearchFragment extends Fragment implements DrawerItem {
     private static final String TAG = SavedSearchFragment.class.getName();
 
     private static final String ARG_ID = "id";
@@ -41,15 +41,9 @@ public class SavedSearchFragment extends DaggerFragment implements DrawerItem {
     /** Name used for {@link android.app.FragmentManager}. */
     public static final String FRAGMENT_TAG = SavedSearchFragment.class.getName();
 
+    private FragmentSavedSearchBinding binding;
+
     private Listener mListener;
-
-    private ViewFlipper mViewFlipper;
-
-    private TextInputLayout nameInputLayout;
-    private EditText mName;
-
-    private TextInputLayout queryInputLayout;
-    private EditText mQuery;
 
     private SavedSearch savedSearch;
 
@@ -84,33 +78,21 @@ public class SavedSearchFragment extends DaggerFragment implements DrawerItem {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        FragmentActivity activity = getActivity();
-        if (activity != null) {
-            sharedMainActivityViewModel = ViewModelProviders.of(activity).get(SharedMainActivityViewModel.class);
-        } else {
-            throw new IllegalStateException("No Activity");
-        }
+        sharedMainActivityViewModel = ViewModelProviders.of(requireActivity())
+                .get(SharedMainActivityViewModel.class);
 
         setHasOptionsMenu(true);
     }
 
-
     @Override
-    public View onCreateView(LayoutInflater  inflater, ViewGroup container, Bundle savedInstanceState) {
-        View view = inflater.inflate(R.layout.fragment_saved_search, container, false);
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        binding = FragmentSavedSearchBinding.inflate(inflater, container, false);
 
-        mViewFlipper = (ViewFlipper) view.findViewById(R.id.fragment_saved_search_flipper);
-        nameInputLayout = (TextInputLayout) view.findViewById(R.id.fragment_saved_search_name_input_layout);
-        mName = (EditText) view.findViewById(R.id.fragment_saved_search_name);
-        queryInputLayout = (TextInputLayout) view.findViewById(R.id.fragment_saved_search_query_input_layout);
-        mQuery = (EditText) view.findViewById(R.id.fragment_saved_search_query);
-
-        setViewsFromArgument();
-
-        return view;
+        return binding.getRoot();
     }
 
-    private void setViewsFromArgument() {
+    @Override
+    public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         View viewToFocus = null;
 
         if (isEditingExistingFilter()) { /* Existing filter. */
@@ -119,19 +101,19 @@ public class SavedSearchFragment extends DaggerFragment implements DrawerItem {
             savedSearch = dataRepository.getSavedSearch(id);
 
             if (savedSearch != null) {
-                mName.setText(savedSearch.getName());
-                mQuery.setText(savedSearch.getQuery());
+                binding.fragmentSavedSearchName.setText(savedSearch.getName());
+                binding.fragmentSavedSearchQuery.setText(savedSearch.getQuery());
 
-                mViewFlipper.setDisplayedChild(0);
+                binding.fragmentSavedSearchFlipper.setDisplayedChild(0);
 
-                viewToFocus = mQuery;
+                viewToFocus = binding.fragmentSavedSearchQuery;
 
             } else {
-                mViewFlipper.setDisplayedChild(1);
+                binding.fragmentSavedSearchFlipper.setDisplayedChild(1);
             }
 
         } else { /* New filter. */
-            viewToFocus = mName;
+            viewToFocus = binding.fragmentSavedSearchName;
         }
 
         /*
@@ -146,8 +128,9 @@ public class SavedSearchFragment extends DaggerFragment implements DrawerItem {
 
     @Override
     public void onResume() {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG);
         super.onResume();
+
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG);
 
         announceChangesToActivity();
     }
@@ -168,19 +151,22 @@ public class SavedSearchFragment extends DaggerFragment implements DrawerItem {
     public void onAttach(Context context) {
         super.onAttach(context);
 
+        App.appComponent.inject(this);
+
         /* This makes sure that the container activity has implemented
          * the callback interface. If not, it throws an exception
          */
         try {
             mListener = (Listener) getActivity();
         } catch (ClassCastException e) {
-            throw new ClassCastException(getActivity().toString() + " must implement " + Listener.class);
+            throw new ClassCastException(requireActivity().toString() + " must implement " + Listener.class);
         }
     }
 
     @Override
     public void onDetach() {
         super.onDetach();
+
         mListener = null;
     }
 
@@ -193,7 +179,7 @@ public class SavedSearchFragment extends DaggerFragment implements DrawerItem {
 
         inflater.inflate(R.menu.close_done, menu);
 
-        /* Remove search item. */
+        // Remove search item.
         menu.removeItem(R.id.activity_action_search);
     }
 
@@ -238,28 +224,28 @@ public class SavedSearchFragment extends DaggerFragment implements DrawerItem {
     }
 
     private SavedSearch validateSavedSearch() {
-        String name = mName.getText().toString().trim();
-        String query = mQuery.getText().toString().trim();
+        String name = binding.fragmentSavedSearchName.getText().toString().trim();
+        String query = binding.fragmentSavedSearchQuery.getText().toString().trim();
 
         boolean isValid = true;
 
         /* Validate name. */
         if (TextUtils.isEmpty(name)) {
-            nameInputLayout.setError(getString(R.string.can_not_be_empty));
+            binding.fragmentSavedSearchNameInputLayout.setError(getString(R.string.can_not_be_empty));
             isValid = false;
         } else if (sameNameFilterExists(name)) {
-            nameInputLayout.setError(getString(R.string.filter_name_already_exists));
+            binding.fragmentSavedSearchNameInputLayout.setError(getString(R.string.filter_name_already_exists));
             isValid = false;
         } else {
-            nameInputLayout.setError(null);
+            binding.fragmentSavedSearchNameInputLayout.setError(null);
         }
 
         /* Validate query. */
         if (TextUtils.isEmpty(query)) {
-            queryInputLayout.setError(getString(R.string.can_not_be_empty));
+            binding.fragmentSavedSearchQueryInputLayout.setError(getString(R.string.can_not_be_empty));
             isValid = false;
         } else {
-            queryInputLayout.setError(null);
+            binding.fragmentSavedSearchQueryInputLayout.setError(null);
         }
 
         if (!isValid) {

@@ -13,6 +13,21 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ArrayAdapter;
+
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.ActionBarDrawerToggle;
+import androidx.appcompat.view.ActionMode;
+import androidx.appcompat.widget.SearchView;
+import androidx.appcompat.widget.Toolbar;
+import androidx.core.view.GravityCompat;
+import androidx.drawerlayout.widget.DrawerLayout;
+import androidx.fragment.app.Fragment;
+import androidx.lifecycle.Lifecycle;
+import androidx.lifecycle.LifecycleOwner;
+import androidx.lifecycle.ViewModelProvider;
+import androidx.lifecycle.ViewModelProviders;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import com.google.android.material.navigation.NavigationView;
 import com.google.android.material.snackbar.Snackbar;
@@ -26,6 +41,7 @@ import com.orgzly.android.db.NotesClipboard;
 import com.orgzly.android.db.dao.NoteDao;
 import com.orgzly.android.db.entity.Book;
 import com.orgzly.android.db.entity.Note;
+import com.orgzly.android.db.entity.Repo;
 import com.orgzly.android.db.entity.SavedSearch;
 import com.orgzly.android.prefs.AppPreferences;
 import com.orgzly.android.query.Condition;
@@ -39,22 +55,21 @@ import com.orgzly.android.ui.CommonActivity;
 import com.orgzly.android.ui.DisplayManager;
 import com.orgzly.android.ui.NotePlace;
 import com.orgzly.android.ui.Place;
+import com.orgzly.android.ui.books.BooksFragment;
 import com.orgzly.android.ui.dialogs.SimpleOneLinerDialog;
 import com.orgzly.android.ui.drawer.DrawerNavigationView;
-import com.orgzly.android.ui.notes.book.BookPrefaceFragment;
-import com.orgzly.android.ui.books.BooksFragment;
-import com.orgzly.android.ui.savedsearch.SavedSearchFragment;
 import com.orgzly.android.ui.note.NoteFragment;
-import com.orgzly.android.ui.note.NotePayload;
 import com.orgzly.android.ui.notes.book.BookFragment;
+import com.orgzly.android.ui.notes.book.BookPrefaceFragment;
 import com.orgzly.android.ui.notifications.Notifications;
 import com.orgzly.android.ui.repos.ReposActivity;
-import com.orgzly.android.ui.settings.SettingsActivity;
+import com.orgzly.android.ui.savedsearch.SavedSearchFragment;
 import com.orgzly.android.ui.savedsearches.SavedSearchesFragment;
+import com.orgzly.android.ui.settings.SettingsActivity;
 import com.orgzly.android.ui.util.ActivityUtils;
 import com.orgzly.android.usecase.BookCreate;
-import com.orgzly.android.usecase.BookCycleVisibility;
 import com.orgzly.android.usecase.BookExport;
+import com.orgzly.android.usecase.BookExportToUri;
 import com.orgzly.android.usecase.BookForceLoad;
 import com.orgzly.android.usecase.BookForceSave;
 import com.orgzly.android.usecase.BookImportFromUri;
@@ -63,14 +78,6 @@ import com.orgzly.android.usecase.BookLinkUpdate;
 import com.orgzly.android.usecase.BookSparseTreeForNote;
 import com.orgzly.android.usecase.BookUpdatePreface;
 import com.orgzly.android.usecase.NoteCopy;
-import com.orgzly.android.usecase.SavedSearchCreate;
-import com.orgzly.android.usecase.SavedSearchDelete;
-import com.orgzly.android.usecase.SavedSearchExport;
-import com.orgzly.android.usecase.SavedSearchImport;
-import com.orgzly.android.usecase.SavedSearchMoveDown;
-import com.orgzly.android.usecase.SavedSearchMoveUp;
-import com.orgzly.android.usecase.SavedSearchUpdate;
-import com.orgzly.android.usecase.NoteCreate;
 import com.orgzly.android.usecase.NoteCut;
 import com.orgzly.android.usecase.NoteDelete;
 import com.orgzly.android.usecase.NoteDemote;
@@ -78,11 +85,17 @@ import com.orgzly.android.usecase.NoteFindWithProperty;
 import com.orgzly.android.usecase.NoteMove;
 import com.orgzly.android.usecase.NotePaste;
 import com.orgzly.android.usecase.NotePromote;
-import com.orgzly.android.usecase.NoteUpdate;
 import com.orgzly.android.usecase.NoteUpdateDeadlineTime;
 import com.orgzly.android.usecase.NoteUpdateScheduledTime;
 import com.orgzly.android.usecase.NoteUpdateState;
 import com.orgzly.android.usecase.NoteUpdateStateToggle;
+import com.orgzly.android.usecase.SavedSearchCreate;
+import com.orgzly.android.usecase.SavedSearchDelete;
+import com.orgzly.android.usecase.SavedSearchExport;
+import com.orgzly.android.usecase.SavedSearchImport;
+import com.orgzly.android.usecase.SavedSearchMoveDown;
+import com.orgzly.android.usecase.SavedSearchMoveUp;
+import com.orgzly.android.usecase.SavedSearchUpdate;
 import com.orgzly.android.usecase.UseCase;
 import com.orgzly.android.usecase.UseCaseResult;
 import com.orgzly.android.usecase.UseCaseRunner;
@@ -95,23 +108,10 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.util.List;
 import java.util.Set;
-
-import androidx.annotation.NonNull;
-import androidx.annotation.StringRes;
-import androidx.appcompat.app.ActionBarDrawerToggle;
-import androidx.appcompat.view.ActionMode;
-import androidx.appcompat.widget.SearchView;
-import androidx.appcompat.widget.Toolbar;
-import androidx.core.view.GravityCompat;
-import androidx.drawerlayout.widget.DrawerLayout;
-import androidx.fragment.app.Fragment;
-import androidx.lifecycle.Lifecycle;
-import androidx.lifecycle.LifecycleOwner;
-import androidx.lifecycle.ViewModelProvider;
-import androidx.lifecycle.ViewModelProviders;
-import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 public class MainActivity extends CommonActivity
         implements
@@ -126,9 +126,6 @@ public class MainActivity extends CommonActivity
         BookPrefaceFragment.Listener {
 
     public static final String TAG = MainActivity.class.getName();
-
-    public static final int ACTIVITY_REQUEST_CODE_FOR_BOOK_IMPORT = 0;
-    public static final int ACTIVITY_REQUEST_CODE_FOR_QUERIES_IMPORT = 1;
 
     private static final int DIALOG_NEW_BOOK = 1;
     private static final int DIALOG_IMPORT_BOOK = 2;
@@ -155,10 +152,15 @@ public class MainActivity extends CommonActivity
 
     private MainActivityViewModel viewModel;
 
+    private ActivityForResult activityForResult;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, savedInstanceState);
+        App.appComponent.inject(this);
+
         super.onCreate(savedInstanceState);
+
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, savedInstanceState);
 
         setContentView(R.layout.activity_main);
 
@@ -182,6 +184,47 @@ public class MainActivity extends CommonActivity
         if (AppPreferences.newNoteNotification(this)) {
             Notifications.createNewNoteNotification(this);
         }
+
+        activityForResult = new ActivityForResult(this) {
+            @Override
+            public void onBookExport(@NotNull Uri uri, long bookId) {
+                runnableOnResumeFragments = () ->
+                        mSyncFragment.run(new BookExportToUri(uri, bookId) {
+                            @NotNull
+                            @Override
+                            public OutputStream getStream(@NotNull Uri uri) throws IOException {
+                                return getOutputStream(uri);
+                            }
+                        });
+            }
+
+            @Override
+            public void onBookImport(@NotNull Uri uri) {
+                runnableOnResumeFragments = () ->
+                        importChosenBook(uri);
+            }
+
+            @Override
+            public void onSearchQueriesImport(@NotNull Uri uri) {
+                viewModel.importSavedSearches(uri);
+            }
+
+            @Override
+            public void onSearchQueriesExport(@NotNull Uri uri) {
+                viewModel.exportSavedSearches(uri);
+            }
+        };
+    }
+
+    @NotNull
+    private OutputStream getOutputStream(@NotNull Uri uri) throws IOException {
+        OutputStream stream = getContentResolver().openOutputStream(uri);
+
+        if (stream == null) {
+            throw new IOException("Failed opening output stream for " + uri);
+        }
+
+        return stream;
     }
 
     /**
@@ -203,7 +246,7 @@ public class MainActivity extends CommonActivity
             if (bookId > 0) {
                 DisplayManager.displayBook(getSupportFragmentManager(), bookId, noteId);
                 if (noteId > 0) {
-                    DisplayManager.displayNote(getSupportFragmentManager(), bookId, noteId);
+                    DisplayManager.displayExistingNote(getSupportFragmentManager(), bookId, noteId);
                 }
             } else if (queryString != null) {
                 DisplayManager.displayQuery(getSupportFragmentManager(), queryString);
@@ -329,7 +372,8 @@ public class MainActivity extends CommonActivity
 
                     if (result.getUserData() != null) {
                         NoteDao.NoteIdBookId note = (NoteDao.NoteIdBookId) result.getUserData();
-                        DisplayManager.displayNote(getSupportFragmentManager(), note.getBookId(), note.getNoteId());
+                        DisplayManager.displayExistingNote(
+                                getSupportFragmentManager(), note.getBookId(), note.getNoteId());
 
                     } else {
                         showSnackbar(getString(
@@ -365,20 +409,28 @@ public class MainActivity extends CommonActivity
 
         viewModel.getSetBookLinkRequestEvent().observeSingle(this, result -> {
             Book book = result.getBook();
-            List<CharSequence> links = result.getLinks();
+            List<Repo> links = result.getLinks();
+            CharSequence[] urls = result.getUrls();
             int checked = result.getSelected();
 
             if (links.isEmpty()) {
                 showSnackbarWithReposLink(getString(R.string.no_repos));
 
             } else {
+                ArrayAdapter<Repo> adapter = new ArrayAdapter<>(
+                        this, R.layout.item_repo, R.id.item_repo_url);
+                adapter.addAll(links);
+
+
+
                 dialog = new AlertDialog.Builder(this)
-                        .setTitle("Link " + MiscUtils.quotedString(book.getName()) + " to repository")
-                        .setSingleChoiceItems(links.toArray(new CharSequence[0]), checked, (d, which) -> {
-                            mSyncFragment.run(new BookLinkUpdate(book.getId(), links.get(which).toString()));
-                            dialog.dismiss();
-                            dialog = null;
-                        })
+                        .setTitle(R.string.book_link)
+                        .setSingleChoiceItems(
+                                urls, checked, (d, which) -> {
+                                    mSyncFragment.run(new BookLinkUpdate(book.getId(), links.get(which)));
+                                    dialog.dismiss();
+                                    dialog = null;
+                                })
 
                         .setNeutralButton(R.string.remove_notebook_link, (dialog, which) -> {
                             mSyncFragment.run(new BookLinkUpdate(book.getId()));
@@ -388,6 +440,14 @@ public class MainActivity extends CommonActivity
             }
         });
 
+        viewModel.getSavedSearchedExportEvent().observeSingle(this, count -> {
+            showSnackbar(getResources().getQuantityString(R.plurals.exported_searches, count, count));
+        });
+
+        viewModel.getSavedSearchedImportEvent().observeSingle(this, count -> {
+            showSnackbar(getResources().getQuantityString(R.plurals.imported_searches, count, count));
+
+        });
         viewModel.getErrorEvent().observeSingle(this, error -> {
             if (error != null) {
                 showSnackbar(error.getLocalizedMessage());
@@ -428,8 +488,9 @@ public class MainActivity extends CommonActivity
 
     @Override
     protected void onPostCreate(Bundle savedInstanceState) {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, savedInstanceState);
         super.onPostCreate(savedInstanceState);
+
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, savedInstanceState);
 
         // Sync the toggle state after onRestoreInstanceState has occurred.
         if (mDrawerToggle != null) {
@@ -439,8 +500,9 @@ public class MainActivity extends CommonActivity
 
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, newConfig);
         super.onConfigurationChanged(newConfig);
+
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, newConfig);
 
         if (mDrawerToggle != null) {
             mDrawerToggle.onConfigurationChanged(newConfig);
@@ -449,8 +511,9 @@ public class MainActivity extends CommonActivity
 
     @Override
     protected void onResume() {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG);
         super.onResume();
+
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG);
 
         if (clearFragmentBackstack) {
             DisplayManager.clear(getSupportFragmentManager());
@@ -502,8 +565,9 @@ public class MainActivity extends CommonActivity
 
     @Override
     protected void onPause() {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG);
         super.onPause();
+
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG);
 
         LocalBroadcastManager bm = LocalBroadcastManager.getInstance(this);
         bm.unregisterReceiver(receiver);
@@ -516,8 +580,9 @@ public class MainActivity extends CommonActivity
 
     @Override
     protected void onDestroy() {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG);
         super.onDestroy();
+
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG);
 
         if (mDrawerLayout != null && mDrawerToggle != null) {
             mDrawerLayout.removeDrawerListener(mDrawerToggle);
@@ -536,23 +601,14 @@ public class MainActivity extends CommonActivity
             }
         }
 
-        /* Handle back press when editing note - check for changes */
-        Fragment fragment = getSupportFragmentManager().findFragmentByTag(NoteFragment.FRAGMENT_TAG);
-        if (fragment instanceof NoteFragment && fragment.isVisible()) {
-            NoteFragment noteFragment = (NoteFragment) fragment;
-            if (noteFragment.isAskingForConfirmationForModifiedNote()) {
-                return;
-            }
-        }
-
         super.onBackPressed();
     }
 
     @Override
     public void onAttachFragment(Fragment fragment) {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, fragment);
-
         super.onAttachFragment(fragment);
+
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, fragment);
 
 //        if (BuildConfig.LOG_DEBUG) {
 //            fragment.getLifecycle().addObserver((LifecycleEventObserver) this::logLifecycleEvent);
@@ -565,8 +621,9 @@ public class MainActivity extends CommonActivity
 
     @Override
     protected void onResumeFragments() {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG);
         super.onResumeFragments();
+
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG);
 
         /* Showing dialog in onResume() fails with:
          *   Can not perform this action after onSaveInstanceState
@@ -578,8 +635,8 @@ public class MainActivity extends CommonActivity
 
         LocalBroadcastManager bm = LocalBroadcastManager.getInstance(this);
         bm.registerReceiver(receiver, new IntentFilter(AppIntent.ACTION_OPEN_NOTE));
-        bm.registerReceiver(receiver, new IntentFilter(AppIntent.ACTION_OPEN_NOTE_WITH_PROPERTY));
-        bm.registerReceiver(receiver, new IntentFilter(AppIntent.ACTION_OPEN_FILE_LINK));
+        bm.registerReceiver(receiver, new IntentFilter(AppIntent.ACTION_FOLLOW_LINK_TO_NOTE_WITH_PROPERTY));
+        bm.registerReceiver(receiver, new IntentFilter(AppIntent.ACTION_FOLLOW_LINK_TO_FILE));
         bm.registerReceiver(receiver, new IntentFilter(AppIntent.ACTION_OPEN_SAVED_SEARCHES));
         bm.registerReceiver(receiver, new IntentFilter(AppIntent.ACTION_OPEN_QUERY));
         bm.registerReceiver(receiver, new IntentFilter(AppIntent.ACTION_OPEN_BOOKS));
@@ -592,8 +649,9 @@ public class MainActivity extends CommonActivity
      */
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
-        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, menu);
         super.onCreateOptionsMenu(menu);
+
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG, menu);
 
         // Inflate the menu; this adds items to the action bar if it is present.
         getMenuInflater().inflate(R.menu.activity_actions, menu);
@@ -686,22 +744,11 @@ public class MainActivity extends CommonActivity
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        switch (requestCode) {
-            case ACTIVITY_REQUEST_CODE_FOR_BOOK_IMPORT:
-                if (resultCode == RESULT_OK) {
-                    Uri uri = data.getData();
-                    runnableOnResumeFragments = () -> importChosenBook(uri);
-                }
-                break;
+        super.onActivityResult(requestCode, resultCode, data);
 
-            case ACTIVITY_REQUEST_CODE_FOR_QUERIES_IMPORT:
-                if (resultCode == RESULT_OK) {
-                    Uri uri = data.getData();
-                    runnableOnResumeFragments = () ->
-                            mSyncFragment.run(new SavedSearchImport(uri));
-                }
-                break;
-        }
+        if (BuildConfig.LOG_DEBUG) LogUtils.d(TAG);
+
+        activityForResult.onResult(requestCode, resultCode, data);
     }
 
     /**
@@ -746,24 +793,34 @@ public class MainActivity extends CommonActivity
         DisplayManager.displayNewNote(getSupportFragmentManager(), target);
     }
 
-    /* Save note. */
     @Override
-    public void onNoteCreateRequest(@NotNull NotePayload notePayload, NotePlace notePlace) {
+    public void onNoteCreated(Note note) {
         finishActionMode();
-
         popBackStackAndCloseKeyboard();
 
-        mSyncFragment.run(new NoteCreate(notePayload, notePlace));
+        // Display Snackbar with an action (create new note below just created one)
+        View view = findViewById(R.id.main_content);
+        if (view != null) {
+            showSnackbar(Snackbar
+                    .make(view, R.string.message_note_created, Snackbar.LENGTH_LONG)
+                    .setAction(R.string.new_below, v -> {
+                        NotePlace notePlace = new NotePlace(
+                                note.getPosition().getBookId(),
+                                note.getId(),
+                                Place.BELOW);
+
+                        DisplayManager.displayNewNote(getSupportFragmentManager(), notePlace);
+                    }));
+        }
     }
 
     @Override
-    public void onNoteUpdateRequest(@NotNull NotePayload notePayload, long noteId) {
+    public void onNoteUpdated(Note note) {
         popBackStackAndCloseKeyboard();
-        mSyncFragment.run(new NoteUpdate(noteId, notePayload));
     }
 
     @Override
-    public void onNoteCancelRequest() {
+    public void onNoteCanceled() {
         popBackStackAndCloseKeyboard();
     }
 
@@ -852,23 +909,22 @@ public class MainActivity extends CommonActivity
      * Callback from {@link BooksFragment}.
      */
     @Override
-    public void onBookExportRequest(final long bookId) {
-        runWithPermission(
-                AppPermissions.Usage.BOOK_EXPORT,
-                () -> mSyncFragment.run(new BookExport(bookId)));
+    public void onBookExportRequest(@NotNull Book book, @NotNull BookFormat format) {
+        // For scoped storage
+//        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.KITKAT) {
+//            String defaultFileName = BookName.fileName(book.getName(), format);
+//            activityForResult.startBookExportFileChooser(book.getId(), defaultFileName);
+//
+//        } else {
+            runWithPermission(
+                    AppPermissions.Usage.BOOK_EXPORT,
+                    () -> mSyncFragment.run(new BookExport(book.getId())));
+//        }
     }
 
     @Override
     public void onBookImportRequest() {
-        startFileChooser(R.string.import_org_file, ACTIVITY_REQUEST_CODE_FOR_BOOK_IMPORT);
-    }
-
-    private void startFileChooser(@StringRes int titleResId, int code) {
-        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("*/*");
-
-        startActivityForResult(Intent.createChooser(intent, getString(titleResId)), code);
+        activityForResult.startBookImportFileChooser();
     }
 
     /**
@@ -1108,18 +1164,28 @@ public class MainActivity extends CommonActivity
 
     @Override
     public void onSavedSearchesExportRequest(int title, @NonNull String message) {
-        runWithPermission(
-                AppPermissions.Usage.SAVED_SEARCHES_EXPORT_IMPORT,
-                () -> mSyncFragment.run(new SavedSearchExport()));
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.KITKAT) {
+            activityForResult.startSavedSearchesExportFileChooser();
+
+        } else {
+            runWithPermission(
+                    AppPermissions.Usage.SAVED_SEARCHES_EXPORT_IMPORT,
+                    () -> mSyncFragment.run(new SavedSearchExport()));
+        }
     }
 
     @Override
     public void onSavedSearchesImportRequest(int title, @NonNull String message) {
-        startFileChooser(R.string.import_, ACTIVITY_REQUEST_CODE_FOR_QUERIES_IMPORT);
+        activityForResult.startSavedSearchesImportFileChooser();
     }
 
     private void openSettings() {
         startActivity(new Intent(MainActivity.this, SettingsActivity.class));
+    }
+
+    public void popBackStackAndCloseKeyboard() {
+        getSupportFragmentManager().popBackStack();
+        ActivityUtils.closeSoftKeyboard(this);
     }
 
     /**
@@ -1130,25 +1196,8 @@ public class MainActivity extends CommonActivity
         if (action instanceof BookExport) {
             showSnackbar(getString(R.string.book_exported, (File) result.getUserData()));
 
-        } else if (action instanceof NoteCreate) {
-            Note note = (Note) result.getUserData();
-
-            /*
-             * Display Snackbar with an action - create new note below just created one.
-             */
-            View view = findViewById(R.id.main_content);
-            if (view != null) {
-                showSnackbar(Snackbar
-                        .make(view, R.string.message_note_created, Snackbar.LENGTH_LONG)
-                        .setAction(R.string.new_below, v -> {
-                            NotePlace notePlace = new NotePlace(
-                                    note.getPosition().getBookId(),
-                                    note.getId(),
-                                    Place.BELOW);
-
-                            DisplayManager.displayNewNote(getSupportFragmentManager(), notePlace);
-                        }));
-            }
+        } else if (action instanceof BookExportToUri) {
+            showSnackbar(getString(R.string.book_exported, (Uri) result.getUserData()));
 
         } else if (action instanceof NoteCut) {
             NotesClipboard clipboard = (NotesClipboard) result.getUserData();
@@ -1202,12 +1251,6 @@ public class MainActivity extends CommonActivity
             showSnackbar(getString(
                     R.string.failed_exporting_book, throwable.getLocalizedMessage()));
 
-        } else if (action instanceof NoteCreate) {
-            showSnackbar(R.string.message_failed_creating_note);
-
-        } else if (action instanceof NoteUpdate) {
-            showSnackbar(R.string.message_failed_updating_note);
-
         } else {
             if (throwable.getCause() != null) {
                 showSnackbar(throwable.getCause().getLocalizedMessage());
@@ -1232,14 +1275,14 @@ public class MainActivity extends CommonActivity
         LocalBroadcastManager.getInstance(App.getAppContext()).sendBroadcast(intent);
     }
 
-    public static void openFileLink(String path) {
-        Intent intent = new Intent(AppIntent.ACTION_OPEN_FILE_LINK);
+    public static void followLinkToFile(String path) {
+        Intent intent = new Intent(AppIntent.ACTION_FOLLOW_LINK_TO_FILE);
         intent.putExtra(AppIntent.EXTRA_PATH, path);
         LocalBroadcastManager.getInstance(App.getAppContext()).sendBroadcast(intent);
     }
 
-    public static void openNoteWithProperty(String name, String value) {
-        Intent intent = new Intent(AppIntent.ACTION_OPEN_NOTE_WITH_PROPERTY);
+    public static void followLinkToNoteWithProperty(String name, String value) {
+        Intent intent = new Intent(AppIntent.ACTION_FOLLOW_LINK_TO_NOTE_WITH_PROPERTY);
         intent.putExtra(AppIntent.EXTRA_PROPERTY_NAME, name);
         intent.putExtra(AppIntent.EXTRA_PROPERTY_VALUE, value);
         LocalBroadcastManager.getInstance(App.getAppContext()).sendBroadcast(intent);
@@ -1260,7 +1303,7 @@ public class MainActivity extends CommonActivity
                 case AppIntent.ACTION_OPEN_NOTE: {
                     long bookId = intent.getLongExtra(AppIntent.EXTRA_BOOK_ID, 0);
                     long noteId = intent.getLongExtra(AppIntent.EXTRA_NOTE_ID, 0);
-                    DisplayManager.displayNote(getSupportFragmentManager(), bookId, noteId);
+                    DisplayManager.displayExistingNote(getSupportFragmentManager(), bookId, noteId);
                     break;
                 }
 
@@ -1292,16 +1335,16 @@ public class MainActivity extends CommonActivity
                     break;
                 }
 
-                case AppIntent.ACTION_OPEN_NOTE_WITH_PROPERTY: {
+                case AppIntent.ACTION_FOLLOW_LINK_TO_NOTE_WITH_PROPERTY: {
                     String name = intent.getStringExtra(AppIntent.EXTRA_PROPERTY_NAME);
                     String value = intent.getStringExtra(AppIntent.EXTRA_PROPERTY_VALUE);
-                    viewModel.requestNoteWithProperty(name, value);
+                    viewModel.followLinkToNoteWithProperty(name, value);
                     break;
                 }
 
-                case AppIntent.ACTION_OPEN_FILE_LINK: {
+                case AppIntent.ACTION_FOLLOW_LINK_TO_FILE: {
                     String path = intent.getStringExtra(AppIntent.EXTRA_PATH);
-                    viewModel.openFileLink(path);
+                    viewModel.followLinkToFile(path);
                     break;
                 }
             }

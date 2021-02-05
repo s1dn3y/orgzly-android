@@ -1,19 +1,20 @@
 package com.orgzly.android.ui.main
 
+import android.net.Uri
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.Transformations
 import com.orgzly.BuildConfig
 import com.orgzly.android.App
 import com.orgzly.android.data.DataRepository
-import com.orgzly.android.db.entity.Book
-import com.orgzly.android.db.entity.BookView
-import com.orgzly.android.db.entity.Note
-import com.orgzly.android.db.entity.SavedSearch
+import com.orgzly.android.db.dao.NoteDao
+import com.orgzly.android.db.entity.*
+import com.orgzly.android.prefs.AppPreferences
 import com.orgzly.android.ui.CommonViewModel
 import com.orgzly.android.ui.SingleLiveEvent
 import com.orgzly.android.usecase.*
 import com.orgzly.android.util.LogUtils
+import java.lang.IllegalStateException
 
 class MainActivityViewModel(private val dataRepository: DataRepository) : CommonViewModel() {
     private val booksParams = MutableLiveData<String>()
@@ -30,9 +31,16 @@ class MainActivityViewModel(private val dataRepository: DataRepository) : Common
 
     val openNoteRequestEvent: SingleLiveEvent<Note> = SingleLiveEvent()
 
-    data class BookLinkOptions(val book: Book, val links: List<CharSequence>, val selected: Int)
+    data class BookLinkOptions(
+            val book: Book,
+            val links: List<Repo>,
+            val urls: Array<CharSequence>,
+            val selected: Int)
 
     val setBookLinkRequestEvent: SingleLiveEvent<BookLinkOptions> = SingleLiveEvent()
+
+    val savedSearchedExportEvent: SingleLiveEvent<Int> = SingleLiveEvent()
+    val savedSearchedImportEvent: SingleLiveEvent<Int> = SingleLiveEvent()
 
     init {
         // Observe parameters, run query when they change
@@ -56,7 +64,7 @@ class MainActivityViewModel(private val dataRepository: DataRepository) : Common
         return savedSearches
     }
 
-    fun openFileLink(path: String) {
+    fun followLinkToFile(path: String) {
         App.EXECUTORS.diskIO().execute {
             catchAndPostError {
                 val result = UseCaseRunner.run(LinkFindTarget(path))
@@ -65,14 +73,25 @@ class MainActivityViewModel(private val dataRepository: DataRepository) : Common
         }
     }
 
-
-    fun requestNoteWithProperty(name: String, value: String) {
+    fun followLinkToNoteWithProperty(name: String, value: String) {
         App.EXECUTORS.diskIO().execute {
             val useCase = NoteFindWithProperty(name, value)
 
             catchAndPostError {
                 val result = UseCaseRunner.run(useCase)
-                openNoteWithPropertyRequestEvent.postValue(Pair(useCase, result))
+
+                val noteIdBookId = result.userData as NoteDao.NoteIdBookId
+
+                when (AppPreferences.linkTarget(App.getAppContext())) {
+                    "note_details" ->
+                        openNoteWithPropertyRequestEvent.postValue(Pair(useCase, result))
+
+                    "book_and_sparse_tree" ->
+                        UseCaseRunner.run(BookSparseTreeForNote(noteIdBookId.noteId))
+
+                    "book_and_scroll" ->
+                        UseCaseRunner.run(BookScrollToNote(noteIdBookId.noteId))
+                }
             }
         }
     }
@@ -90,28 +109,47 @@ class MainActivityViewModel(private val dataRepository: DataRepository) : Common
             val bookView = dataRepository.getBookView(bookId)
 
             if (bookView == null) {
-                errorEvent.postValue(Exception("no book"))
-            } else {
-                val repos = dataRepository.getReposList()
+                errorEvent.postValue(IllegalStateException("Book not found"))
 
-                val a = if (repos.isEmpty()) {
-                    BookLinkOptions(bookView.book, emptyList(), -1)
+            } else {
+                val repos = dataRepository.getRepos()
+
+                val options = if (repos.isEmpty()) {
+                    BookLinkOptions(bookView.book, emptyList(), emptyArray(), -1)
 
                 } else {
-                    val currentLink = bookView.linkedTo
+                    val currentLink = bookView.linkRepo
 
-                    var selectedLink = -1
-                    val links = repos.mapIndexed { index, repo ->
-                        if (repo.url == currentLink) {
-                            selectedLink = index
-                        }
-                        repo.url
+                    val selectedLink = repos.indexOfFirst {
+                        it.url == currentLink?.url
                     }
 
-                    BookLinkOptions(bookView.book, links, selectedLink)
+                    BookLinkOptions(
+                            bookView.book,
+                            repos,
+                            repos.map { it.url }.toTypedArray(),
+                            selectedLink)
                 }
 
-                setBookLinkRequestEvent.postValue(a)
+                setBookLinkRequestEvent.postValue(options)
+            }
+        }
+    }
+
+    fun exportSavedSearches(uri: Uri) {
+        App.EXECUTORS.diskIO().execute {
+            catchAndPostError {
+                val result = UseCaseRunner.run(SavedSearchExport(uri))
+                savedSearchedExportEvent.postValue(result.userData as Int)
+            }
+        }
+    }
+
+    fun importSavedSearches(uri: Uri) {
+        App.EXECUTORS.diskIO().execute {
+            catchAndPostError {
+                val result = UseCaseRunner.run(SavedSearchImport(uri))
+                savedSearchedImportEvent.postValue(result.userData as Int)
             }
         }
     }

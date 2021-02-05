@@ -3,25 +3,24 @@ package com.orgzly.android.espresso;
 import android.widget.DatePicker;
 import android.widget.TimePicker;
 
+import androidx.test.core.app.ActivityScenario;
+
 import com.orgzly.R;
 import com.orgzly.android.OrgzlyTest;
 import com.orgzly.android.prefs.AppPreferences;
 import com.orgzly.android.ui.main.MainActivity;
+import com.orgzly.org.datetime.OrgDateTime;
 
 import org.junit.Ignore;
-import org.junit.Rule;
 import org.junit.Test;
 
 import java.io.IOException;
-
-import androidx.test.rule.ActivityTestRule;
 
 import static androidx.test.espresso.Espresso.onView;
 import static androidx.test.espresso.Espresso.pressBack;
 import static androidx.test.espresso.action.ViewActions.click;
 import static androidx.test.espresso.action.ViewActions.longClick;
 import static androidx.test.espresso.action.ViewActions.scrollTo;
-import static androidx.test.espresso.action.ViewActions.swipeLeft;
 import static androidx.test.espresso.assertion.ViewAssertions.doesNotExist;
 import static androidx.test.espresso.assertion.ViewAssertions.matches;
 import static androidx.test.espresso.contrib.DrawerActions.open;
@@ -47,12 +46,7 @@ import static org.hamcrest.Matchers.endsWith;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.startsWith;
 
-//@Ignore
-@SuppressWarnings("unchecked")
 public class QueryFragmentTest extends OrgzlyTest {
-    @Rule
-    public ActivityTestRule activityRule = new EspressoActivityTestRule<>(MainActivity.class, true, false);
-
     private void defaultSetUp() {
         testUtils.setupBook("book-one",
                 "First book used for testing\n" +
@@ -103,7 +97,7 @@ public class QueryFragmentTest extends OrgzlyTest {
                 "** Note #28.\n" +
                 "");
 
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
     }
 
     @Test
@@ -215,7 +209,7 @@ public class QueryFragmentTest extends OrgzlyTest {
     @Test
     public void testToggleState() {
         testUtils.setupBook("book-one", "* Note");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         searchForText("Note");
         onNoteInSearch(0).perform(longClick());
@@ -236,7 +230,7 @@ public class QueryFragmentTest extends OrgzlyTest {
         onNotesInSearch().check(matches(recyclerViewItemCount(29)));
         onNoteInSearch(27).perform(click());
         onView(withId(R.id.fragment_note_view_flipper)).check(matches(isDisplayed()));
-        onView(withText("Note #28.")).check(matches(isDisplayed()));
+        onView(allOf(withText("Note #28."), isDisplayed())).check(matches(isDisplayed()));
     }
 
     @Test
@@ -249,10 +243,10 @@ public class QueryFragmentTest extends OrgzlyTest {
 
         onView(allOf(withText(endsWith("Note C.")), isDisplayed())).perform(longClick());
         onView(withId(R.id.bottom_action_bar_schedule)).perform(click());
-        onView(withId(R.id.dialog_timestamp_date_picker)).perform(click());
+        onView(withId(R.id.date_picker_button)).perform(click());
         onView(withClassName(equalTo(DatePicker.class.getName()))).perform(setDate(2014, 4, 1));
         onView(anyOf(withText(R.string.ok), withText(R.string.done))).perform(click());
-        onView(withId(R.id.dialog_timestamp_time_picker)).perform(scrollTo(), click());
+        onView(withId(R.id.time_picker_button)).perform(scrollTo(), click());
         onView(withClassName(equalTo(TimePicker.class.getName()))).perform(setTime(9, 15));
         onView(anyOf(withText(R.string.ok), withText(R.string.done))).perform(click());
         onView(withText(R.string.set)).perform(click());
@@ -271,7 +265,7 @@ public class QueryFragmentTest extends OrgzlyTest {
                 "** [#C] Note D.\n" +
                 "*** TODO Note E.");
         testUtils.setupBook("book-two", "* Note #1.\n");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         searchForText("p.b");
         onView(withId(R.id.fragment_query_search_view_flipper)).check(matches(isDisplayed()));
@@ -295,7 +289,7 @@ public class QueryFragmentTest extends OrgzlyTest {
                 "*** DONE Note #5.\n" +
                 "CLOSED: [2014-06-03 Tue 13:34]\n" +
                 "");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         searchForText(".i.todo .i.done");
         onView(withId(R.id.fragment_query_search_view_flipper)).check(matches(isDisplayed()));
@@ -310,7 +304,7 @@ public class QueryFragmentTest extends OrgzlyTest {
     public void testNotesWithSameScheduledTimeString() throws IOException {
         testUtils.setupBook("notebook-1", "* Note A\nSCHEDULED: <2014-01-01>");
         testUtils.setupBook("notebook-2", "* Note B\nSCHEDULED: <2014-01-01>");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         searchForText("s.today");
         onView(withId(R.id.fragment_query_search_view_flipper)).check(matches(isDisplayed()));
@@ -321,7 +315,7 @@ public class QueryFragmentTest extends OrgzlyTest {
     public void testNotesWithSameDeadlineTimeString() throws IOException {
         testUtils.setupBook("notebook-1", "* Note A\nDEADLINE: <2014-01-01>");
         testUtils.setupBook("notebook-2", "* Note B\nDEADLINE: <2014-01-01>");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         searchForText("d.today");
         onView(withId(R.id.fragment_query_search_view_flipper)).check(matches(isDisplayed()));
@@ -331,7 +325,7 @@ public class QueryFragmentTest extends OrgzlyTest {
     @Test
     public void testClosedTimeSearch() {
         testUtils.setupBook("notebook-1", "* Note A\nCLOSED: [2014-01-01]");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         searchForText("c.ge.-2d");
         onView(withId(R.id.fragment_query_search_view_flipper)).check(matches(isDisplayed()));
@@ -347,7 +341,7 @@ public class QueryFragmentTest extends OrgzlyTest {
                 "*** Note C\n" +
                 "*** Note D\n" +
                 "");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onView(allOf(withText("notebook-1"), isDisplayed())).perform(click());
         searchForText("t.tag");
@@ -363,7 +357,7 @@ public class QueryFragmentTest extends OrgzlyTest {
                 "*** Note C\n" +
                 "*** Note D\n" +
                 "");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onView(allOf(withText("notebook-1"), isDisplayed())).perform(click());
         searchForText("t.tag1 t.tag2");
@@ -382,7 +376,7 @@ public class QueryFragmentTest extends OrgzlyTest {
                 "*** Note C :tag3:\n" +
                 "*** Note D :tag3:\n" +
                 "");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onView(allOf(withText("notebook-1"), isDisplayed())).perform(click());
 
@@ -410,7 +404,7 @@ public class QueryFragmentTest extends OrgzlyTest {
                 "** Note C :tag3:\n" +
                 "** Note D :tag3:\n" +
                 "");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onView(allOf(withText("notebook-1"), isDisplayed())).perform(click());
 
@@ -438,7 +432,7 @@ public class QueryFragmentTest extends OrgzlyTest {
                 "** Note C :tag3:\n" +
                 "** Note D :tag3:\n" +
                 "");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onView(allOf(withText("notebook-1"), isDisplayed())).perform(click());
 
@@ -470,7 +464,7 @@ public class QueryFragmentTest extends OrgzlyTest {
                 "*** Note C\n" +
                 "*** Note D\n" +
                 "");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onView(allOf(withText("notebook-1"), isDisplayed())).perform(click());
         searchForText("note o.scheduled");
@@ -491,7 +485,7 @@ public class QueryFragmentTest extends OrgzlyTest {
                 "*** DONE Note D\n" +
                 "SCHEDULED: <2014-01-03>\n" +
                 "");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onView(allOf(withText("notebook-1"), isDisplayed())).perform(click());
         searchForText("s.today .i.done o.s");
@@ -513,7 +507,7 @@ public class QueryFragmentTest extends OrgzlyTest {
                 "*** DONE Note D\n" +
                 "DEADLINE: <2014-01-03>\n" +
                 "");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onView(allOf(withText("notebook-1"), isDisplayed())).perform(click());
         searchForText("d.today .i.done .o.d");
@@ -560,7 +554,7 @@ public class QueryFragmentTest extends OrgzlyTest {
                 "** Note B :b:\n" +
                 "*** Note C\n" +
                 "* Note D\n");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onView(allOf(withText("notebook"), isDisplayed())).perform(click());
         searchForText(".t.c");
@@ -575,7 +569,7 @@ public class QueryFragmentTest extends OrgzlyTest {
                 "** Note B :b:\n" +
                 "*** Note C\n" +
                 "* Note D\n");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onView(allOf(withText("notebook"), isDisplayed())).perform(click());
         searchForText(".t.b");
@@ -592,7 +586,7 @@ public class QueryFragmentTest extends OrgzlyTest {
                 "** Note B :b:\n" +
                 "*** Note C\n" +
                 "* Note D\n");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onView(allOf(withText("notebook"), isDisplayed())).perform(click());
         searchForText("tn.a or tn.b");
@@ -609,7 +603,7 @@ public class QueryFragmentTest extends OrgzlyTest {
                 "** [#A] Note B :b:\n" +
                 "*** [#C] Note C\n" +
                 "* Note D\n");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onView(allOf(withText("notebook"), isDisplayed())).perform(click());
         searchForText("o.p");
@@ -627,7 +621,7 @@ public class QueryFragmentTest extends OrgzlyTest {
                 "** [#A] Note B :b:\n" +
                 "*** [#C] Note C\n" +
                 "* Note D\n");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onView(allOf(withText("notebook"), isDisplayed())).perform(click());
         searchForText(".o.p");
@@ -646,7 +640,7 @@ public class QueryFragmentTest extends OrgzlyTest {
                 "** NEXT Note B :b:\n" +
                 "* DONE Note C\n" +
                 "* Note D\n");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onView(allOf(withText("notebook"), isDisplayed())).perform(click());
         searchForText(".it.todo");
@@ -664,7 +658,7 @@ public class QueryFragmentTest extends OrgzlyTest {
                 "** NEXT Note B :b:\n" +
                 "* DONE Note C\n" +
                 "* Note D\n");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onView(allOf(withText("notebook"), isDisplayed())).perform(click());
         searchForText("it.todo");
@@ -682,7 +676,7 @@ public class QueryFragmentTest extends OrgzlyTest {
                 "** NEXT Note B :b:\n" +
                 "* DONE Note C\n" +
                 "* Note D\n");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onView(allOf(withText("notebook"), isDisplayed())).perform(click());
         searchForText("it.none");
@@ -699,7 +693,7 @@ public class QueryFragmentTest extends OrgzlyTest {
                 "** NEXT Note B :b:\n" +
                 "* DONE Note C\n" +
                 "* Note D\n");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onView(allOf(withText("notebook"), isDisplayed())).perform(click());
         searchForText(".it.none");
@@ -718,7 +712,7 @@ public class QueryFragmentTest extends OrgzlyTest {
                 "** Note B\n" +
                 "Content for Note B\n" +
                 "* Note C\n");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         onView(allOf(withText("notebook"), isDisplayed())).perform(click());
         onNoteInBook(1, R.id.item_head_fold_button).perform(click());
@@ -732,7 +726,7 @@ public class QueryFragmentTest extends OrgzlyTest {
     @Test
     public void testDeSelectRemovedNoteInSearch() {
         testUtils.setupBook("notebook", "* TODO Note A\n* TODO Note B");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         searchForText("i.todo");
 
@@ -751,16 +745,16 @@ public class QueryFragmentTest extends OrgzlyTest {
 
     @Test
     public void testNoNotesFoundMessageIsDisplayedInSearch() {
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
         searchForText("Note");
         onView(withText(R.string.no_notes_found_after_search)).check(matches(isDisplayed()));
     }
 
-    @Ignore // TODO: Implement
+    @Ignore("Not implemented yet")
     @Test
     public void testPreselectedStateOfSelectedNote() {
         testUtils.setupBook("notebook", "* TODO Note A\n* TODO Note B");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
 
         searchForText("i.todo");
 
@@ -771,21 +765,54 @@ public class QueryFragmentTest extends OrgzlyTest {
         onView(withText("TODO")).check(matches(isChecked()));
     }
 
-    @Ignore
-    @Test
-    public void testOpensBookFromSearchBySwiping() {
-        testUtils.setupBook("notebook", "* TODO Note A\n* TODO Note B");
-        activityRule.launchActivity(null);
-        searchForText("i.todo");
-        onNoteInSearch(1).perform(swipeLeft());
-        onView(withId(R.id.fragment_book_view_flipper)).check(matches(isDisplayed()));
-    }
-
     @Test
     public void testSearchAndClickOnNoteWithTwoDifferentEvents() {
         testUtils.setupBook("notebook", "* Note\n<2000-01-01>\n<2000-01-02>");
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
         searchForText("e.lt.now");
         onNoteInSearch(0).perform(click());
+    }
+
+    @Test
+    public void testInactiveScheduled() {
+        testUtils.setupBook("notebook-1", "* Note A\nSCHEDULED: [2020-07-01]");
+        ActivityScenario.launch(MainActivity.class);
+        searchForText("s.le.today");
+        onNotesInSearch().check(matches(recyclerViewItemCount(0)));
+    }
+
+    @Test
+    public void testInactiveDeadline() {
+        testUtils.setupBook("notebook-1", "* Note A\nDEADLINE: [2020-07-01]");
+        ActivityScenario.launch(MainActivity.class);
+        searchForText("d.le.today");
+        onNotesInSearch().check(matches(recyclerViewItemCount(0)));
+    }
+
+    @Test
+    public void testScheduledTimestamp() {
+        String inOneHour = new OrgDateTime.Builder()
+                .setDateTime(System.currentTimeMillis() + 1000 * 60 * 60)
+                .setHasTime(true)
+                .setIsActive(true)
+                .build()
+                .toString();
+
+        testUtils.setupBook("notebook-1", "* Note A\nSCHEDULED: " + inOneHour);
+
+        ActivityScenario.launch(MainActivity.class);
+
+        onBook(0).perform(click());
+
+        // Remove time usage
+        onView(allOf(withText(endsWith("Note A")), isDisplayed())).perform(longClick());
+        onView(withId(R.id.bottom_action_bar_schedule)).perform(click());
+        onView(withId(R.id.time_used_checkbox)).perform(click());
+        onView(withText(R.string.set)).perform(click());
+        pressBack();
+
+        searchForText("s.now");
+
+        onNotesInSearch().check(matches(recyclerViewItemCount(1)));
     }
 }

@@ -2,16 +2,14 @@ package com.orgzly.android.espresso;
 
 import android.widget.EditText;
 
+import androidx.test.core.app.ActivityScenario;
+
 import com.orgzly.R;
 import com.orgzly.android.OrgzlyTest;
 import com.orgzly.android.ui.main.MainActivity;
 
 import org.junit.Before;
-import org.junit.Ignore;
-import org.junit.Rule;
 import org.junit.Test;
-
-import androidx.test.rule.ActivityTestRule;
 
 import static androidx.test.espresso.Espresso.onView;
 import static androidx.test.espresso.Espresso.pressBack;
@@ -31,13 +29,7 @@ import static com.orgzly.android.espresso.EspressoUtils.searchForText;
 import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.Matchers.allOf;
 
-
-//@Ignore
-@SuppressWarnings("unchecked")
 public class CreatedAtPropertyTest extends OrgzlyTest {
-    @Rule
-    public ActivityTestRule activityRule = new EspressoActivityTestRule<>(MainActivity.class, true, false);
-
     @Before
     public void setUp() throws Exception {
         super.setUp();
@@ -60,7 +52,7 @@ public class CreatedAtPropertyTest extends OrgzlyTest {
                 "SCHEDULED: <2014-01-01>\n"
         );
 
-        activityRule.launchActivity(null);
+        ActivityScenario.launch(MainActivity.class);
     }
 
     @Test

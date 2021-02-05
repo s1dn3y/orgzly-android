@@ -172,7 +172,7 @@ public class BookParsingTest extends OrgzlyTest {
     }
 
     @Test
-    public void testLoadingTextZh() {
+    public void  testLoadingTextZh() {
         onBookFile("html/zh.org").onLoad().onGet();
     }
 
@@ -383,7 +383,7 @@ public class BookParsingTest extends OrgzlyTest {
                 /* Write from db -> temp file. */
                 File file = dataRepository.getTempBookFile();
                 try {
-                    new NotesOrgExporter(context, dataRepository).exportBook(book, file);
+                    new NotesOrgExporter(dataRepository).exportBook(book, file);
                     assertEquals("Notebook", expacted, MiscUtils.readStringFromFile(file));
                 } finally {
                     file.delete();
